@@ -15,9 +15,6 @@ from decimal import Decimal as D
 from datetime import datetime, timedelta
 import tkinter as tk
 
-# http://findlay.space/posts/python-argparse-columns/
-os.environ['COLUMNS'] = str(shutil.get_terminal_size().columns)
-
 
 class Transformation(enum.Enum):
     identity = 0
