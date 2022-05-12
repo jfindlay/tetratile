@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-# Import python libs
+import pathlib
+import io
 import os
 import re
 import sys
@@ -13,14 +14,33 @@ import argparse
 import configparser
 from decimal import Decimal as D
 from datetime import datetime, timedelta
+from typing import Callable, Mapping, List, Tuple, Union
 import tkinter as tk
 
 
-class Transformation(enum.Enum):
+class Dim(enum.Enum):
+    '''
+    Map cartesian cardinals to integers
+    '''
+    x = 0
+    y = 1
+    z = 2  # For polycubes
+
+
+class Rotation(enum.Enum):
+    '''
+    Enumerate available rotations
+    '''
     identity = 0
-    # Rotations
     cw = 1  # π/2 clockwise
     ccw = 2  # π/2 counterclockwise
+
+
+class Translation(enum.Enum):
+    '''
+    Enumerate available translations
+    '''
+    identity = 0
     # Single row/column translations
     left = 3  # One column left
     right = 4  # One column right
@@ -33,7 +53,7 @@ class Transformation(enum.Enum):
 
 class GameState(enum.Enum):
     '''
-    Account game state
+    Enumerate game states
     '''
     running = 0
     paused = 1
@@ -42,37 +62,123 @@ class GameState(enum.Enum):
 
 class EventType(enum.Enum):
     '''
-    Types of asynchronous events used by the game
+    Enumerate available asynchronous events
     '''
     iterate = 1
     remove = 2
 
 
-class Polyomino:
+class Colors(dict):
     '''
+    Store color information used for displaying polyominos in the game
+    '''
+    def __init__(self, normal:str, light:str, dark:str):
+        self['normal'] = normal
+        self['light'] = light
+        self['dark'] = dark
+
+
+class Grid:
+    '''
+    The rectangular region of squares that comprises the game state.  The
+    squares map to the integer coordinates in the first quadrant of the
+    cartesian plane such that each square is represented by the (integral)
+    point at its upper right corner.  The origin corresponds to the upper right
+    corner of the lower left square of the grid
+    '''
+    def __init__(self, opts:Mapping, width:int, height:int):
+        '''
+        Setup game grid
+        '''
+        # Store program options
+        self.opts:Mapping = opts
+
+        # Initialize internal grid
+        self._grid:List[List[Mapping]] = [[{'type': None, 'id': None, 'colors': {}, 'is_active': None} for i in range(height)] for j in range(width)]
+        self.width:int = len(self._grid)
+        self.height:int = len(self._grid[0])
+
+    def __check_nonnegative(self, v:Tuple[int, int])->None:
+        '''
+        Disallow accessing squares by negative coordinates.  Python allows
+        accessing elements of iterables by one modulus below the residual
+        representation of the array, but we disallow it for simplicity
+        '''
+        if 0 > min(v):
+            raise IndexError('grid coordinates must be nonnegative')
+
+    def __getitem__(self, v:Tuple[int, int])->dict:
+        '''
+        Retrieve the square details at coordinates v from the origin
+        '''
+        self.__check_nonnegative(v)
+        return self._grid[v[0]][v[1]]
+
+    def __setitem__(self, v:Tuple[int, int], d:Mapping)->None:
+        '''
+        Update the square at coordinates v from the origin to be of tetromino
+        type t with Tkinter item id i, where d is a dictionary of the form
+        {'type': t, 'id': i)
+        '''
+        self.__check_nonnegative(v)
+        self._grid[v[0]][v[1]].update(d)
+
+    def __iter__(self)->Tuple[int, int, dict]:
+        '''
+        Iterate over the grid squares, providing both the coordinates and the
+        square info
+        '''
+        for x in range(self.width):
+            for y in range(self.height):
+                yield (x, y), self[x, y]
+
+    def print(self)->None:
+        '''
+        Display grid state
+        '''
+        # Convert columns to rows
+        rows:Mapping = {}
+        for v, square in self:
+            if not v[1] in rows:
+                rows[v[1]] = {}
+            rows[v[1]][v[0]] = ' ' if square['type'] is None else square['type']
+        for i, row in enumerate(rows):
+            rows[i] = ''.join([2*rows[i][j] if len(rows[i][j]) == 1 else rows[i][j][:2] for j in sorted(rows[i].keys())])
+
+        # Print rows with formatting
+        digits:int = len(str(self.opts['board']['height']))
+        row_fmt:str = '{{:0{}}}'.format(digits)
+        print(digits*' ' + '+' + 2*len(self._grid)*'-' + '+')
+        for i in reversed(list(rows.keys())):
+            print(row_fmt.format(self.opts['board']['height'] - i - 1) + '|' + rows[i] + '|')
+        print(digits*' ' + '+' + 2*len(self._grid)*'-' + '+')
+
+
+class Polyomino:
+    r'''
     Define a polyomino by coordinates to the upper right corner of each of its
     squares and provide the valid transformations for a polyomino on the
     $\mathbb Z^2$ lattice
     '''
-    def __init__(self, name, colors, coords):
+    def __init__(self, name:str, colors:Colors, coords:List[Tuple[D, D]]):
         '''
         Setup attributes and coordinates
         '''
-        self.name = name
-        self.colors = colors
+        self.name:str = name
+        self.colors:Colors = colors
 
         # To minimize the distance between the polyomino proper origin and the
         # polyomino center of mass, coordinates can take integral and
         # half-integral values
         if any([v[0]%1 or v[1]%1 for v in coords]):
-            self.coords = [[int(v[0] + D('-0.5')), int(v[1] + D('-0.5'))] for v in coords]
-            self.o = [D('-0.5'), D('-0.5')]
+            self.coords:List[Tuple[D, D]] = [[int(v[0] + D('-0.5')), int(v[1] + D('-0.5'))] for v in coords]
+            self.o:List[D] = [D('-0.5'), D('-0.5')]
         else:
-            self.coords = coords
-            self.o = [0, 0]
-        self.ordinal = len(coords)  # Polyomino ordinal (4 == tetromino, etc.)
+            self.coords:List[Tuple[D, D]] = coords
+            self.o:List[D] = [0, 0]
+        self.ordinal:int = len(coords)  # Polyomino ordinal (4 == tetromino, etc.)
 
-    def _check_grid(self, coords, grid):
+    def _check_grid(self, coords:List[Tuple[int, int]], grid:Grid)->bool:
         '''
         Validate whether the coordinates, which correspond to the upper right
         corner of a polyomino square are all available in the grid
@@ -88,43 +194,41 @@ class Polyomino:
                 return False
         return True
 
-    def min(self, dimension):
+    def min(self, dim:Dim)->int:
         '''
         Return the minimum coordinate of the polyomino in the given dimension
-        ('x' corresponds to 0 and 'y' to 1)
         '''
-        return min([c[dimension] for c in self.coords])
+        return min([c[dim.value] for c in self.coords])
 
-    def max(self, dimension):
+    def max(self, dim:Dim)->int:
         '''
         Return the maximum coordinate of the polyomino in the given dimension
-        ('x' corresponds to 0 and 'y' to 1)
         '''
-        return max([c[dimension] for c in self.coords])
+        return max([c[dim.value] for c in self.coords])
 
-    def rotate(self, direction, grid, **kwargs):
+    def rotate(self, dir:Rotation, grid:Grid)->bool:
         '''
         Rotate polyomino clockwise or counterclockwise (±π/2) about its proper
         origin if the resulting transformation is contained within the grid and
         places the polyomino on unoccupied squares
         '''
         # Prepare new coordinates and rotation tensor
-        coords = [[0, 0] for i in range(self.ordinal)]
-        sgn = {
-            Transformation.cw: -1,
-            Transformation.ccw: 1,
-        }.get(direction)
+        coords:List[Tuple[D, D]] = [[0, 0] for i in range(self.ordinal)]
+        sgn:int = {
+            Rotation.cw: -1,
+            Rotation.ccw: 1,
+        }.get(dir)
 
         # Apply rotation tensor if possible
         for i in range(self.ordinal):
             coords[i][0] = int(-sgn*(self.coords[i][1] - self.o[1]) + self.o[0])
             coords[i][1] = int(sgn*(self.coords[i][0] - self.o[0]) + self.o[1])
         if self._check_grid(coords, grid):
-            self.coords = coords
+            self.coords:List[Tuple[D, D]] = coords
             return True
         return False
 
-    def translate(self, v, grid, incremental=False):
+    def translate(self, v:Union[Tuple[int, int], Translation], grid, incremental=False)->bool:
         '''
         Translate polyomino by the vector v if the resulting transformation
         places the polyomino within the grid and on unoccupied squares
@@ -134,26 +238,28 @@ class Polyomino:
         or as far as possible along the direction of v
         '''
         # Redefine v as explicit coordinates in the grid reference frame
-        if isinstance(v, Transformation):
+        if isinstance(v, Translation):
             v = {
-                Transformation.left: [-1, 0],
-                Transformation.right: [1, 0],
-                Transformation.down: [0, -1],
-                Transformation.min: [-self.min(0), 0],
-                Transformation.max: [grid.width - self.max(0) - 1, 0],
-                Transformation.bottom: [0, -self.min(1)],
+                Translation.left: [-1, 0],
+                Translation.right: [1, 0],
+                Translation.down: [0, -1],
+                Translation.min: [-self.min(Dim.x), 0],
+                Translation.max: [grid.width - self.max(Dim.x) - 1, 0],
+                Translation.bottom: [0, -self.min(Dim.y)],
             }.get(v)
-        # define unit form of v
-        magnitude = D(math.sqrt(v[0]**2 + v[1]**2)) or 1  # Prevent zero division
-        unit = [math.ceil(v[0]/magnitude), math.ceil(v[1]/magnitude)]
+        # Define unit form of v
+        magnitude:D = D(math.sqrt(v[0]**2 + v[1]**2)) or 1  # Prevent zero division
+        # Not really a unit in the dir of v, but a projection onto the grid;
+        # corollary: this can only be one of nine possible values
+        unit:Tuple[int, int] = [math.ceil(v[0]/magnitude), math.ceil(v[1]/magnitude)]
 
         # Prepare new coordinates and new proper origin in the grid frame
-        coords = [[0, 0] for i in range(self.ordinal)]
-        o = [0, 0]
+        coords:List[Tuple[D, D]] = [[0, 0] for i in range(self.ordinal)]
+        o:Tuple[int, int] = [0, 0]
 
         # Incrementally apply upto translation vector v
-        success = None
-        u = unit if incremental else v
+        success:bool = False
+        u:Tuple[int, int] = unit if incremental else v
         if u == [0, 0]:
             return success
         while True:
@@ -175,51 +281,37 @@ tetrominoes = (
     Polyomino(
         name='Z',
         coords=[[D('-1.5'), 0], [D('-0.5'), 0], [D('-0.5'), -1], [D('0.5'), -1]],
-        colors={'normal': '#CC6666',
-                'light' : '#F89FAB',
-                'dark'  : '#803C3B'},
+        colors=Colors('#CC6666', '#F89FAB', '#803C3B'),
     ),
     Polyomino(
         name='S',
         coords=[[D('-0.5'), -1], [D('0.5'), -1], [D('0.5'), 0], [D('1.5'), 0]],
-        colors={'normal': '#66CC66',
-                'light' : '#79FC79',
-                'dark'  : '#3B803B'},
+        colors=Colors('#66CC66', '#79FC79', '#3B803B'),
     ),
     Polyomino(
         name='l',
         coords=[[D('-1.5'), 0], [D('-0.5'), 0], [D('0.5'), 0], [D('1.5'), 0]],
-        colors={'normal': '#6666CC',
-                'light' : '#7979FC',
-                'dark'  : '#3B3B80'},
+        colors=Colors('#6666CC', '#7979FC', '#3B3B80'),
     ),
     Polyomino(
         name='T',
         coords=[[-1, 0], [0, 0], [0, -1], [1, 0]],
-        colors={'normal': '#CCCC66',
-                'light' : '#FCFC79',
-                'dark'  : '#80803B'},
+        colors=Colors('#CCCC66', '#FCFC79', '#80803B'),
     ),
     Polyomino(
         name='o',
         coords=[[D('-0.5'), D('0.5')], [D('-0.5'), D('-0.5')], [D('0.5'), D('0.5')], [D('0.5'), D('-0.5')]],
-        colors={'normal': '#CC66CC',
-                'light' : '#FC79FC',
-                'dark'  : '#803B80'},
+        colors=Colors('#CC66CC', '#FC79FC', '#803B80'),
     ),
     Polyomino(
         name='L',
         coords=[[-1, 1], [-1, 0], [-1, -1], [0, -1]],
-        colors={'normal': '#66CCCC',
-                'light' : '#79FCFC',
-                'dark'  : '#3B8080'},
+        colors=Colors('#66CCCC', '#79FCFC', '#3B8080'),
     ),
     Polyomino(
         name='J',
         coords=[[0, 1], [0, 0], [0, -1], [-1, -1]],
-        colors={'normal': '#DAAA00',
-                'light' : '#FCC600',
-                'dark'  : '#806200'},
+        colors=Colors('#DAAA00', '#FCC600', '#806200'),
     ),
 )
 
@@ -229,15 +321,15 @@ class PrecisionVar(tk.StringVar):
     Represent the value at the specified precision while maintaining the actual
     value at full precision
     '''
-    def __init__(self, *args, precision=2, **kwargs):
+    def __init__(self, *args, precision:int=2, **kwargs):
         '''
         Setup PrecisionVar object
         '''
-        self.precision = precision
-        self.float_value = self._validate(kwargs.pop('value') if 'value' in kwargs else 0.0)
+        self.precision:int = precision
+        self.float_value:float = self._validate(kwargs.pop('value') if 'value' in kwargs else 0.0)
         super().__init__(*args, value=self._fmt(), **kwargs)
 
-    def _validate(self, value):
+    def _validate(self, value:float)->float:
         '''
         Validate input value
         '''
@@ -246,29 +338,29 @@ class PrecisionVar(tk.StringVar):
         else:
             raise TypeError('value must be a nonnegative number')
 
-    def _fmt(self):
+    def _fmt(self)->str:
         '''
         Format decimal string representation
         '''
         return '{{:.{}f}}'.format(self.precision).format(self.float_value)
 
-    def get(self, raw=False):
+    def get(self, raw:bool=False)->float:
         '''
         Get value formatted to specified precision
         '''
         return self.float_value if raw else super().get()
 
-    def set(self, value=0.0):
+    def set(self, value:float=0.0)->None:
         '''
         Set value
         '''
-        self.float_value = self._validate(value)
+        self.float_value:float = self._validate(value)
         super().set(self._fmt())
 
 
 class TimerVar(tk.StringVar):
     '''
-    Timer string widget variable with start/stop facilities
+    Timer string widget variable with start/stop capability
     '''
     def __init__(self, *args, **kwargs):
         '''
@@ -277,7 +369,7 @@ class TimerVar(tk.StringVar):
         self.set(kwargs.pop('value') if 'value' in kwargs else timedelta())
         super().__init__(*args, value=self._to_str(self.accumulated_elapsed), **kwargs)
 
-    def _validate(self, value):
+    def _validate(self, value:timedelta)->timedelta:
         '''
         Validate input value
         '''
@@ -286,119 +378,43 @@ class TimerVar(tk.StringVar):
         else:
             raise TypeError('value must be of type timedelta')
 
-    def _to_str(self, value):
+    def _to_str(self, value:timedelta)->str:
         '''
         Convert value timedelta to string without microseconds
         '''
         return str(value)[:7]
 
-    def get(self, as_seconds=False):
+    def get(self, as_seconds:bool=False)->Union[str, tk.StringVar]:
         '''
         Get elapsed time as a string or as total seconds
         '''
-        computed = datetime.now() - self.active_counting_since + self.accumulated_elapsed
+        computed:timedelta = datetime.now() - self.active_counting_since + self.accumulated_elapsed
         super().set(self._to_str(computed))  # TkInter uses an internal method to get the value into a widget, so we need to update the parent value here
         return computed.total_seconds() if as_seconds else super().get()
 
-    def set(self, value=timedelta()):
+    def set(self, value:timedelta=timedelta())->None:
         '''
         Reset the timer with a new value or update the value to the current
         time
         '''
-        self.accumulated_elapsed = value  # Reset active counter
-        self.active_counting_since = None  # Timestamp of last start/resume
+        self.accumulated_elapsed:timedelta = value  # Reset active counter
+        self.active_counting_since:timedelta = timedelta()  # Timestamp of last start/resume
 
-    def start(self):
+    def start(self)->None:
         '''
         Begin/resume counting
         '''
         if not self.active_counting_since:  # Start action is idempotent
-            self.active_counting_since = datetime.now()
+            self.active_counting_since:datetime = datetime.now()
 
-    def stop(self):
+    def stop(self)->None:
         '''
         Collect active counting into `accumulated_elapsed` and reset
         `active_counting_since`
         '''
         if self.active_counting_since:  # Stop action is idempotent
             self.accumulated_elapsed += datetime.now() - self.active_counting_since
-            self.active_counting_since = None
-
-
-class Grid:
-    '''
-    The rectangular region of squares that comprises the game state.  The
-    squares map to the integer coordinates in the first quadrant of the
-    cartesian plane such that each square is represented by the (integral)
-    point at its upper right corner.  The origin corresponds to the upper right
-    corner of the lower left square of the grid
-    '''
-    def __init__(self, opts, width, height):
-        '''
-        Setup game grid
-        '''
-        # Store program options
-        self.opts = opts
-
-        # Initialize internal grid
-        self._grid = [[{'type': None, 'id': None, 'colors': {}, 'is_active': None} for i in range(height)] for j in range(width)]
-        self.width = len(self._grid)
-        self.height = len(self._grid[0])
-
-    def __check_nonnegative(self, v):
-        '''
-        Disallow accessing squares by negative coordinates.  Python allows
-        accessing elements of iterables by one modulus below the residual
-        representation of the array, but we disallow it for simplicity
-        '''
-        if 0 > min(v):
-            raise IndexError('grid coordinates must be nonnegative')
-
-    def __getitem__(self, v):
-        '''
-        Retrieve the square details at coordinates v from the origin
-        '''
-        self.__check_nonnegative(v)
-        return self._grid[v[0]][v[1]]
-
-    def __setitem__(self, v, d):
-        '''
-        Update the square at coordinates v from the origin to be of tetromino
-        type t with Tkinter item id i, where d is a dictionary of the form
-        {'type': t, 'id': i)
-        '''
-        self.__check_nonnegative(v)
-        self._grid[v[0]][v[1]].update(d)
-
-    def __iter__(self):
-        '''
-        Iterate over the grid squares, providing both the coordinates and the
-        square info
-        '''
-        for x in range(self.width):
-            for y in range(self.height):
-                yield (x, y), self[x, y]
-
-    def print(self):
-        '''
-        Display grid state
-        '''
-        # Convert columns to rows
-        rows = {}
-        for v, square in self:
-            if not v[1] in rows:
-                rows[v[1]] = {}
-            rows[v[1]][v[0]] = ' ' if square['type'] is None else square['type']
-        for i, row in enumerate(rows):
-            rows[i] = ''.join([2*rows[i][j] if len(rows[i][j]) == 1 else rows[i][j][:2] for j in sorted(rows[i].keys())])
-
-        # Print rows with formatting
-        digits = len(str(self.opts['board']['height']))
-        row_fmt = '{{:0{}}}'.format(digits)
-        print(digits*' ' + '+' + 2*len(self._grid)*'-' + '+')
-        for i in reversed(list(rows.keys())):
-            print(row_fmt.format(self.opts['board']['height'] - i - 1) + '|' + rows[i] + '|')
-        print(digits*' ' + '+' + 2*len(self._grid)*'-' + '+')
+            self.active_counting_since:timedelta = timedelta()
 
 
 class Board(tk.Canvas):
@@ -406,32 +422,31 @@ class Board(tk.Canvas):
     Used to display polyomino block grid
     '''
     @property
-    def width(self): return self.grid.width
+    def width(self)->int: return self.grid.width
 
     @property
-    def height(self): return self.grid.height
+    def height(self)->int: return self.grid.height
 
-    def __init__(self, opts, parent, width, height, is_projection=False):
+    def __init__(self, opts:Mapping, parent:tk.Frame, width:int, height:int, is_projection:bool=False):
         '''
         Setup board
         '''
         # Setup options
-        self.opts = opts
-        self.is_projection = is_projection
-        self.border_width = self.opts['scale']//16
-        self.aspect_proportion = 3 if self.is_projection else 1
-        self.full_row_colors={'normal': '#DDDDDD',
-                              'light' : '#FFFFFF',
-                              'dark'  : '#BBBBBB'}
-        self.pause_cover_id = None
+        self.opts:Mapping = opts
+        self.is_projection:bool = is_projection
+        self.border_width:int = self.opts['scale']//16
+        self.aspect_proportion:int = 3 if self.is_projection else 1
+        self.full_row_colors:Colors = Colors('#DDDDDD', '#FFFFFF', '#BBBBBB')
+        self.pause_cover_id:int = 0
 
         # Setup internal grid
-        self.grid = Grid(self.opts, width, height)
+        self.grid:Grid = Grid(self.opts, width, height)
 
         # Setup TK
         super().__init__(parent,
                          width=self.opts['scale']*width,
                          height=self.opts['scale']*height//self.aspect_proportion)
+        # Setup board widget
         self.create_rectangle(0, 0,
                               self.opts['scale']*width, self.opts['scale']*height,
                               fill='black',
@@ -445,30 +460,33 @@ class Board(tk.Canvas):
                                  text='{},{}'.format(*u),
                                  fill='white', font=('Monospace', 5), anchor=tk.NW)
 
-    def _transform_coord(self, v):
-        '''
-        pysirtet treats the game board as the first quadrant of the Cartesian
-        plane with the origin at the lower left corner, whereas Tkinter,
-        conventionally, places the origin in the upper left corner, with
-        positive x and y directions pointing right and down, respectively.
+    def _transform_coord(self, v:Tuple[int, int])->Tuple[int, int]:
+            '''
+            tetratile treats the game board as the first quadrant of the Cartesian
+            plane with the origin at the lower left corner, whereas Tkinter,
+            conventionally, places the origin in the upper left corner, with
+            positive x and y directions pointing right and down, respectively.
 
-        This function transforms pysirtet coordinates into Tkinter coordinates.
-        '''
-        return [v[0], self.height - 1 - v[1]]
+            This function transforms tetratile coordinates into Tkinter
+            coordinates.
+            '''
+            return [v[0], self.height - 1 - v[1]]
 
-    def _draw_square(self, v, colors):
+    def _draw_square(self, v:Tuple[int, int], colors:Colors)->int:
         '''
         Draw or clear a polyomino square on the board at v
         '''
-        u = self._transform_coord(v)
+        u:Tuple[int, int] = self._transform_coord(v)
         u = [self.opts['scale']*u[0], self.opts['scale']*u[1]]
-        return self.create_rectangle(u[0] + self.border_width, u[1] + self.border_width,
-                                     u[0] + self.opts['scale'], u[1] + self.opts['scale']//self.aspect_proportion,
-                                     fill=colors['normal'],
-                                     outline=colors['dark'],
-                                     width=self.border_width)
+        return self.create_rectangle(
+            u[0] + self.border_width, u[1] + self.border_width,
+            u[0] + self.opts['scale'], u[1] + self.opts['scale']//self.aspect_proportion,
+            fill=colors['normal'],
+            outline=colors['dark'],
+            width=self.border_width
+        )
 
-    def update(self, piece, clear=False, is_active=False):
+    def update(self, piece:Polyomino, clear:bool=False, is_active:bool=False)->None:
         '''
         Place or clear piece on the board
         '''
@@ -488,7 +506,7 @@ class Board(tk.Canvas):
                                    'colors': colors,
                                    'is_active': is_active})
 
-    def select_full_rows(self):
+    def select_full_rows(self)->bool:
         '''
         Mark full rows with full row colors prior to removing them
 
@@ -504,44 +522,46 @@ class Board(tk.Canvas):
             independent game thread: marking and removing, adding new pieces,
             scale proportionally.
         '''
-        has_full_rows = False
+        has_full_rows:bool = False
         for y in range(self.height):
             row_coords = [[x, y] for x in range(self.width) if self.grid[x, y]['type'] and not self.grid[x, y]['is_active']]
             if len(row_coords) == self.width:
                 has_full_rows = True
-                row = Polyomino('row', {v[0]: self.grid[v]['colors'] for v in row_coords}, row_coords)
+                row:Polyomino = Polyomino('row', {v[0]: self.grid[v]['colors'] for v in row_coords}, row_coords)
                 row.full = True
                 row.colors = self.full_row_colors
                 self.update(row, clear=True)
                 self.update(row)
         return has_full_rows
 
-    def _get_rows(self):
+    def _get_rows(self)->Tuple[int, List[Polyomino]]:
         '''
         Gather all full and partial rows
         '''
-        rows = []
-        full_count = 0
+        rows:List[Polyomino] = []
+        full_count:int = 0
         for y in range(self.height):
             row_coords = [[x, y] for x in range(self.width) if self.grid[x, y]['type'] and not self.grid[x, y]['is_active']]
             if len(row_coords):
-                row = Polyomino('row', {v[0]: self.grid[v]['colors'] for v in row_coords}, row_coords)
+                row:Polyomino = Polyomino('row', {v[0]: self.grid[v]['colors'] for v in row_coords}, row_coords)
                 rows.append(row)
-                row.full = False
+                row.full:bool = False
                 row.full_below_count = full_count
             if len(row_coords) == self.width:
                 full_count += 1
-                row.full = True
+                row.full:bool = True
                 row.colors = self.full_row_colors
                 self.update(row, clear=True)
                 self.update(row)
         return full_count, rows
 
-    def remove_full_rows(self):
+    def remove_full_rows(self)->int:
         '''
         Remove full rows and move partial rows down into the vacancies; return
         number of removed rows
         '''
+        full_count:int = None
+        rows:List[Polyomino] = None
         full_count, rows = self._get_rows()
         for row in rows:
             if row.full:
@@ -552,105 +572,109 @@ class Board(tk.Canvas):
                 self.update(row)
         return full_count
 
-    def clear(self):
+    def clear(self)->None:
         '''
         Remove all occupied squares from the board
         '''
+        full_count:int = None
+        rows:List[Polyomino] = None
         full_count, rows = self._get_rows()
         for row in rows:
             self.update(row, clear=True)
 
-    def add_pause_cover(self):
+    def add_pause_cover(self)->None:
         '''
         Cover the board when game is paused
         '''
         if not self.pause_cover_id:
-            self.pause_cover_id = self.create_rectangle(0, 0,
-                                                        self.opts['scale']*(self.width + 1),
-                                                        self.opts['scale']*(self.height + 1),
-                                                        fill='black',
-                                                        outline='black',
-                                                        width=0)
+            self.pause_cover_id:int = self.create_rectangle(
+                0, 0,
+                self.opts['scale']*(self.width + 1),
+                self.opts['scale']*(self.height + 1),
+                fill='black',
+                outline='black',
+                width=0
+            )
 
-    def remove_pause_cover(self):
+    def remove_pause_cover(self)->None:
         '''
         Uncover the board when game is paused
         '''
-        if self.pause_cover_id:
+        if self.pause_cover_id > 0:
             self.delete(self.pause_cover_id)
-            self.pause_cover_id = None
+            self.pause_cover_id = 0
 
 
-class PySirtet(tk.Frame):
+class TetraTile(tk.Frame):
     '''
     Main game window
     '''
-    def __init__(self, config, master=None):
+    def __init__(self, config:Mapping, master=None):
         '''
         Setup game
         '''
         # Setup options
-        self.pdeg = 4  # Polyomino degree (hardcode to tetromino)
-        self.opts = config.opts
+        self.pdeg:int = 4  # Polyomino degree (hardcoded to tetromino)
+        self.opts:Mapping = config.opts
 
         # Setup game data and state
-        self.removed = {r + 1: tk.IntVar() for r in range(self.pdeg)}
+        self.removed:Mapping[int, tk.IntVar] = {r + 1: tk.IntVar() for r in range(self.pdeg)}
         self.removed['total'] = tk.IntVar()
 
-        self.used = {t.name: tk.IntVar() for t in tetrominoes}
+        self.used:Mapping[str, tk.IntVar] = {t.name: tk.IntVar() for t in tetrominoes}
         self.used['total'] = tk.IntVar()
-        self.next_piece = None
-        self.piece = None
+        self.next_piece:Polyomino = None
+        self.piece:Polyomino = None
 
-        self.time_elapsed = TimerVar()
+        self.time_elapsed:TimeVar = TimerVar()
         self.time_elapsed.start()
 
-        self.rate = PrecisionVar()
-        self.piece_rate = PrecisionVar()
-        self.row_rate = PrecisionVar()
+        self.rate:PrecisionVar = PrecisionVar()
+        self.piece_rate:PrecisionVar = PrecisionVar()
+        self.row_rate:PrecisionVar = PrecisionVar()
         self._update_rates()
-        self.state_name = tk.StringVar()
+        self.state_name:tk.StringVar = tk.StringVar()
         self.set_state(GameState.running)
 
         # Setup TK
         super().__init__(master)
-        self.master = master
+        self.master:tk.Frame = master
         self.pack()
         self.create_widgets()
         self.setup_events()
         self.add_piece()
-        self.iterate_id = self._schedule(EventType.iterate)  # Start the game cycle
+        self.iterate_id:str = self._schedule(EventType.iterate)  # Start the game cycle
 
-    def _schedule(self, event_type):
+    def _schedule(self, event_type:EventType)->str:
         '''
         Schedule an asynchronous event
         '''
         if event_type == EventType.iterate:
-            action = self.iterate
-            rate = self.rate.get(raw=True)
+            action:Callable = self.iterate
+            rate:float = self.rate.get(raw=True)
         elif event_type == EventType.remove:
             action = self.remove_full_rows
             rate = self.rate.get(raw=True)*self.opts['remove_freq']
 
         return self.master.after(int(1e3/rate), action)  # Convert seconds to milliseconds
 
-    def _update_removed(self, rows_removed):
+    def _update_removed(self, rows_removed:int)->None:
         '''
         Update the count of rows removed
         '''
         self.removed[rows_removed].set(self.removed[rows_removed].get() + 1)
         self.removed['total'].set(self.removed['total'].get() + rows_removed)
 
-    def _update_rates(self):
+    def _update_rates(self)->None:
         '''
         Update computed rates
         '''
-        new_rate = self.opts['initial_rate']*(1 if self.opts['constant'] else math.log(self.removed['total'].get()/2**4 + 2, 2))
+        new_rate:float = self.opts['initial_rate']*(1 if self.opts['constant'] else math.log(self.removed['total'].get()/2**4 + 2, 2))
         self.rate.set(max(new_rate, self.opts['min_rate']))
         self.piece_rate.set(self.used['total'].get()/(self.time_elapsed.get(as_seconds=True) or 1))
         self.row_rate.set(self.removed['total'].get()/(self.time_elapsed.get(as_seconds=True) or 1))
 
-    def _update_piece_on_board(self, clear=False, is_active=True):
+    def _update_piece_on_board(self, clear:bool=False, is_active:bool=True)->None:
         '''
         Place or clear piece and its projection or shadow on the board
         '''
@@ -658,57 +682,56 @@ class PySirtet(tk.Frame):
         if self.opts['shadow'] == 'projection':
             self.projection_board.update(self.piece, clear=clear, is_active=is_active)
 
-    def create_widgets(self):
+    def create_widgets(self)->None:
         '''
         Pack in game widgets
         '''
         # Game frame
-        self.game = tk.Frame(self)
+        self.game:tk.Frame = tk.Frame(self)
         self.game.pack(side='left')
 
-        self.board = Board(self.opts, self.game, self.opts['board']['width'], self.opts['board']['height'])
+        self.board:Board = Board(self.opts, self.game, self.opts['board']['width'], self.opts['board']['height'])
         self.board.pack(side='top')
 
         if self.opts['shadow'] == 'projection':
-            self.projection_board = Board(self.opts, self.game, self.opts['board']['width'], 1, is_projection=True)
+            self.projection_board:Board = Board(self.opts, self.game, self.opts['board']['width'], 1, is_projection=True)
             self.projection_board.pack(side='top')
 
         # Marquee frame
-        self.marquee = tk.Frame(self)
+        self.marquee:tk.Frame = tk.Frame(self)
         self.marquee.pack(side='right', padx=self.opts['scale'], pady=self.opts['scale'])
 
-        self.preview_frame = tk.LabelFrame(self.marquee, text='preview')
+        self.preview_frame:tk.LabelFrame = tk.LabelFrame(self.marquee, text='preview')
         self.preview_frame.pack(side='top')
-        self.preview_board = Board(self.opts, self.preview_frame, self.pdeg, self.pdeg)
+        self.preview_board:Board = Board(self.opts, self.preview_frame, self.pdeg, self.pdeg)
         self.preview_board.pack(side='top')
 
-        self.rate_frame = tk.LabelFrame(self.marquee, text='fall rate')
+        self.rate_frame:tk.LabelFrame = tk.LabelFrame(self.marquee, text='fall rate')
         self.rate_frame.pack(side='top')
-        self.rate_display = tk.Label(self.rate_frame, textvariable=self.rate)
+        self.rate_display:tk.Label = tk.Label(self.rate_frame, textvariable=self.rate)
         self.rate_display.pack(side='left')
-        self.rate_unit = tk.Label(self.rate_frame, text='blocks/sec')
+        self.rate_unit:tk.Label = tk.Label(self.rate_frame, text='blocks/sec')
         self.rate_unit.pack(side='left')
 
-        self.piece_rate_frame = tk.LabelFrame(self.marquee, text='piece rate')
+        self.piece_rate_frame:tk.LabelFrame = tk.LabelFrame(self.marquee, text='piece rate')
         self.piece_rate_frame.pack(side='top')
-        self.piece_rate_display = tk.Label(self.piece_rate_frame, textvariable=self.piece_rate)
+        self.piece_rate_display:tk.Label = tk.Label(self.piece_rate_frame, textvariable=self.piece_rate)
         self.piece_rate_display.pack(side='left')
-        self.piece_rate_unit = tk.Label(self.piece_rate_frame, text='pieces/sec')
+        self.piece_rate_unit:tk.Label = tk.Label(self.piece_rate_frame, text='pieces/sec')
         self.piece_rate_unit.pack(side='left')
 
-        self.row_rate_frame = tk.LabelFrame(self.marquee, text='row rate')
+        self.row_rate_frame:tk.LabelFrame = tk.LabelFrame(self.marquee, text='row rate')
         self.row_rate_frame.pack(side='top')
-        self.row_rate_display = tk.Label(self.row_rate_frame, textvariable=self.row_rate)
+        self.row_rate_display:tk.Label = tk.Label(self.row_rate_frame, textvariable=self.row_rate)
         self.row_rate_display.pack(side='left')
-        self.row_rate_unit = tk.Label(self.row_rate_frame, text='rows/sec')
+        self.row_rate_unit:tk.Label = tk.Label(self.row_rate_frame, text='rows/sec')
         self.row_rate_unit.pack(side='left')
 
-        self.used_frame = tk.LabelFrame(self.marquee, text='pieces used')
+        self.used_frame:tk.LabelFrame = tk.LabelFrame(self.marquee, text='pieces used')
         self.used_frame.pack(side='top')
-        self.used_stack = {}
-        class Total : name = 'total'
+        class Total : name:str = 'total'
         for t in tetrominoes + (Total(),):
-            stack = self.used_stack[t.name] = {}
+            stack:Mapping[str, tk.Widget] = {}
             stack['frame'] = tk.Frame(self.used_frame, width=12)
             stack['frame'].pack(side='top')
             stack['quantity'] = tk.Label(stack['frame'], textvariable=self.used[t.name])
@@ -718,9 +741,8 @@ class PySirtet(tk.Frame):
 
         self.removed_frame = tk.LabelFrame(self.marquee, text='rows removed')
         self.removed_frame.pack(side='top')
-        self.removed_stack = {}
         for r in list(range(1, self.pdeg + 1)) + ['total']:
-            stack = self.removed_stack[r] = {}
+            stack:Mapping[str, tk.Widget] = {}
             stack['frame'] = tk.Frame(self.removed_frame, width=12)
             stack['frame'].pack(side='top')
             stack['quantity'] = tk.Label(stack['frame'], textvariable=self.removed[r])
@@ -728,35 +750,36 @@ class PySirtet(tk.Frame):
             stack['unit'] = tk.Label(stack['frame'], text='{}{}'.format('' if r == 'total' else 'x', r))
             stack['unit'].pack(side='left')
 
-        self.time_elapsed_frame = tk.LabelFrame(self.marquee, text='elapsed time')
+        self.time_elapsed_frame:tk.LabelFrame = tk.LabelFrame(self.marquee, text='elapsed time')
         self.time_elapsed_frame.pack(side='top')
-        self.time_elapsed_display = tk.Label(self.time_elapsed_frame, textvariable=self.time_elapsed, width=12)
+        self.time_elapsed_display:tk.Label = tk.Label(self.time_elapsed_frame, textvariable=self.time_elapsed, width=12)
         self.time_elapsed_display.pack(side='top')
 
-        self.state_display = tk.Label(self.marquee, textvariable=self.state_name)
+        self.state_display:tk.Label = tk.Label(self.marquee, textvariable=self.state_name)
         self.state_display.pack(side='top')
 
-    def set_state(self, state):
+    def set_state(self, state:GameState)->None:
         '''
         Set the game state
         '''
-        self.state = state
+        self.state:GameState = state
         self.state_name.set({
             GameState.running: '',
             GameState.paused: 'paused',
             GameState.over: 'game over',
         }.get(state))
 
-    def setup_events(self):
+    def setup_events(self)->None:
         '''
         Respond to inputs and other game conditions: mainly key input
         '''
         for name, key in self.opts['keys'].items():
             self.master.bind(key, getattr(self, name))
 
-    def pause(self, event):
+    def pause(self, event:tk.Event)->None:
         '''
-        (Un)pause the game
+        (Un)pause the game.  This function is bound by `setup_events` to the
+        key the user configures for pausing
         '''
         if self.state == GameState.running:
             self.after_cancel(self.iterate_id)
@@ -771,11 +794,13 @@ class PySirtet(tk.Frame):
                 board.remove_pause_cover()
             self.set_state(GameState.running)
 
-    def move(transformation):
+    def move(transformation:Union[Rotation, Translation])->Callable:
         '''
-        Map keys to transformations on the current piece
+        Map keys to transformations on the current piece.  These functions are
+        bound by `setup_events` to the keys the user configures for moving
+        pieces
         '''
-        def transform(self, event):
+        def transform(self, event:tk.Event)->None:
             '''
             Transform the current piece
             '''
@@ -783,23 +808,23 @@ class PySirtet(tk.Frame):
                 self.move_piece(transformation)
         return transform
 
-    left = move(Transformation.left)
-    right = move(Transformation.right)
-    left_side = move(Transformation.min)
-    right_side = move(Transformation.max)
-    rotate_left = move(Transformation.ccw)
-    rotate_right = move(Transformation.cw)
-    down = move(Transformation.down)
-    drop = move(Transformation.bottom)
+    left:Callable = move(Translation.left)
+    right:Callable = move(Translation.right)
+    left_side:Callable = move(Translation.min)
+    right_side:Callable = move(Translation.max)
+    rotate_left:Callable = move(Rotation.ccw)
+    rotate_right:Callable = move(Rotation.cw)
+    down:Callable = move(Translation.down)
+    drop:Callable = move(Translation.bottom)
 
-    def restart(self):
+    def restart(self)->None:
         '''
         Restart the game
         '''
         # Setup game state
         self.board.clear()
         self.projection_board.clear()
-        self.piece = None
+        self.piece:Polyomino = None
 
         for removed_counter in self.removed.values():
             removed_counter.set(0)
@@ -815,15 +840,15 @@ class PySirtet(tk.Frame):
         # Setup TK
         self.restart_button.destroy()
         self.add_piece()
-        self.iterate_id = self._schedule(EventType.iterate)
+        self.iterate_id:str = self._schedule(EventType.iterate)
 
-    def iterate(self):
+    def iterate(self)->None:
         '''
         Move the active piece one row down
         '''
         if self.state == GameState.paused:
             return
-        if not self.move_piece(Transformation.down):
+        if not self.move_piece(Translation.down):
             self._update_piece_on_board(clear=True)  # Remove active
             self._update_piece_on_board(is_active=False)  # Now inactive
             if self.board.select_full_rows():
@@ -838,38 +863,46 @@ class PySirtet(tk.Frame):
             self.restart_button = tk.Button(self.marquee, text='restart', command=self.restart)
             self.restart_button.pack(side='top')
 
-    def add_piece(self):
+    def add_piece(self)->None:
         '''
         Add a tetromino to the top center of the board
         '''
-        def get_next_piece():
+        def get_next_piece()->None:
             '''
             Get a new piece
             '''
             self.preview_board.clear()
-            self.next_piece = copy.deepcopy(random.choice(tetrominoes))
-            self.next_piece.translate([self.preview_board.width//2,
-                                       self.preview_board.height//2],
-                                      self.preview_board.grid)
+            self.next_piece:Polyomino = copy.deepcopy(random.choice(tetrominoes))
+            self.next_piece.translate(
+                [
+                    self.preview_board.width//2,
+                    self.preview_board.height//2,
+                ],
+                self.preview_board.grid
+            )
             self.preview_board.update(self.next_piece)
 
         if not self.next_piece:
             get_next_piece()
-        self.piece = copy.deepcopy(self.next_piece)
+        self.piece:Polyomino = copy.deepcopy(self.next_piece)
         self.used[self.next_piece.name].set(self.used[self.next_piece.name].get() + 1)
         self.used['total'].set(self.used['total'].get() + 1)
         get_next_piece()
 
-        if self.piece.translate([self.board.width//2 - self.preview_board.width//2,
-                                 self.board.height - 1 - self.piece.max(1)],
-                                self.board.grid):
+        if self.piece.translate(
+                [
+                    self.board.width//2 - self.preview_board.width//2,
+                    self.board.height - 1 - self.piece.max(Dim.y),
+                ],
+                self.board.grid
+            ):
             if self.opts['shadow'] == 'projection':
                 self.projection_board.clear()
             self._update_piece_on_board()
         else:
             self.set_state(GameState.over)
 
-    def move_piece(self, movement):
+    def move_piece(self, movement:Union[Rotation, Translation])->bool:
         '''
         Move current piece according to the movement requested:
 
@@ -882,45 +915,58 @@ class PySirtet(tk.Frame):
         - (max) To the rightmost available position
         - (bottom) To the lowest available position
         '''
+        transform:Union[Rotation, Translation] = None
+        kwargs:Mapping[str, bool] = None
         # Map each movement to a predefined transformation on the current piece
         transform, kwargs = {
-            Transformation.cw: (self.piece.rotate, {}),
-            Transformation.ccw: (self.piece.rotate, {}),
-            Transformation.left: (self.piece.translate, {}),
-            Transformation.right: (self.piece.translate, {}),
-            Transformation.down: (self.piece.translate, {}),
-            Transformation.min: (self.piece.translate, {'incremental': True}),
-            Transformation.max: (self.piece.translate, {'incremental': True}),
-            Transformation.bottom: (self.piece.translate, {'incremental': True}),
+            Rotation.cw: (self.piece.rotate, {}),
+            Rotation.ccw: (self.piece.rotate, {}),
+            Translation.left: (self.piece.translate, {}),
+            Translation.right: (self.piece.translate, {}),
+            Translation.down: (self.piece.translate, {}),
+            Translation.min: (self.piece.translate, {'incremental': True}),
+            Translation.max: (self.piece.translate, {'incremental': True}),
+            Translation.bottom: (self.piece.translate, {'incremental': True}),
         }.get(movement)
         # Execute the transformation on the current piece if possible
         self._update_piece_on_board(clear=True)
-        result = transform(movement, self.board.grid, **kwargs)
+        result:bool = transform(movement, self.board.grid, **kwargs)
         # (Re)place
         self._update_piece_on_board()
         return result
 
-    def remove_full_rows(self):
+    def remove_full_rows(self)->None:
         '''
         Remove full rows and move partial rows down into the vacancies
         '''
-        full_count = self.board.remove_full_rows()
+        full_count:int = self.board.remove_full_rows()
         self._update_removed(full_count)
+
+
+class Preferences(tk.Frame):
+    '''
+    Dialog for editing game preferences
+    '''
+    def __init__(self):
+        '''
+        Setup preferences dialog
+        '''
+        raise NotImplementedError('Cannot create preferences dialog')
 
 
 class Config:
     '''
     Provide and save game configuration
     '''
-    def __init__(self, test=False):
+    def __init__(self, test:bool=False):
         '''
-        Setup game configuration.  When ``test == True``, command line
-        arguments are not processed
+        Setup game configuration.  When `test == True`, command line arguments
+        are not processed
         '''
-        self.test = test
+        self.test:bool = test
 
-        self.defaults = {
-            'config_file': os.path.join(os.environ.get('HOME', ''), '.config/pysirtet/pysirtet.conf'),
+        self.defaults:Mapping = {
+            'config_file': self._get_xdg_config(),
             'debug': False,
             'board': {
                 'scale': 32,  # [pixels/block] number of pixels per block side
@@ -945,28 +991,39 @@ class Config:
                 'drop': 'c',
             }
         }
-        self.opts = self.get_opts()
+        self.opts:Mapping = self.get_opts()
 
-    def _config_file(self, arg):
+    def _get_xdg_config(self)->pathlib.Path:
         '''
-        Create the file if it does not exist and return the path
+        Attempt to retrieve `$XDG_CONFIG_HOME`
         '''
-        if not os.path.exists(arg):
-            path, file_name = os.path.split(arg)
-            if not os.path.exists(path):
-                os.makedirs(path)
+        if 'XDG_CONFIG_HOME' in os.environ:
+            return pathlib.Path(os.environ['XDG_CONFIG_HOME'])
+        elif 'HOME' in os.environ:
+            return pathlib.Path(os.environ['HOME'])/'.config'
+        else:
+            return pathlib.Path('.config')
 
-        return arg
+    def _config_file(self, arg:str)->pathlib.Path:
+        '''
+        Create the parent path of the config file if it does not exist and
+        return the path to the file
+        '''
+        path:pathlib.Path = pathlib.Path(arg)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
 
-    def _size(self, arg):
+    def _size(self, arg:str)->Mapping[str, int]:
         '''
         Validate size argument
         '''
         # Match data
-        size_pattern = (r'(?P<width>\d+)'    # width pixels
-                        r'(?P<mlt>[xX])'     # times
-                        r'(?P<height>\d+)')  # height pixels
-        match = re.match(size_pattern, arg)
+        size_pattern:str = (
+            r'(?P<width>\d+)'   # width pixels
+            r'(?P<mlt>[xX])'    # times
+            r'(?P<height>\d+)'  # height pixels
+        )
+        match:re.Match = re.match(size_pattern, arg)
 
         # Validate size
         if not match:
@@ -979,12 +1036,12 @@ class Config:
             board_size[token] = int(value) if value is not None else 0
         return board_size
 
-    def _initial_rate(self, ir):
+    def _initial_rate(self, ir:str)->float:
         '''
         Verify that initial rate is >= minimum rate
         '''
         try:
-            ir = float(ir)
+            ir:float = float(ir)
         except ValueError:
             raise argparse.ArgumentTypeError('Initial rate is not a number: {}'.format(ir))
         if ir < self.defaults['min_rate']:
@@ -992,12 +1049,12 @@ class Config:
         else:
             return ir
 
-    def _get_config(self, config_file):
+    def _get_config(self, config_file:pathlib.Path)->dict:
         '''
         Read configs from config file
         '''
         # TODO: set opts equal to defaults, then override with config file values, then command line values
-        opts = {}
+        opts:Mapping = {}
         config = configparser.ConfigParser()
         config.read(config_file)
 
@@ -1041,11 +1098,11 @@ class Config:
 
         return opts
 
-    def _get_args(self):
+    def _get_args(self)->dict:
         '''
         Read configs from command line
         '''
-        desc='Polyomino tessellation game written in Tkinter'
+        desc='Polyomino tessellation game written in python+Tkinter'
         arg_parser = argparse.ArgumentParser(description=desc,
                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         arg_parser.add_argument('-c', '--config-file',
@@ -1074,7 +1131,7 @@ class Config:
                                 help='Do not increase game rate')
         return vars(arg_parser.parse_args())
 
-    def get_opts(self):
+    def get_opts(self)->dict:
         '''
         Setup program options
         '''
@@ -1083,8 +1140,8 @@ class Config:
         # 1. dynamically set programmatic values
         # 2. config file values
         # 3. command line values
-        args = self.defaults if self.test else self._get_args()
-        opts = self._get_config(args['config_file'])
+        args:Mapping = self.defaults if self.test else self._get_args()
+        opts:Mapping = self._get_config(args['config_file'])
         opts.update(args)
         return opts
 
@@ -1092,17 +1149,17 @@ class Config:
         '''
         Save game configs to file when config dialog is closed
         '''
-        # TODO
+        raise NotImplementedError('Cannot save game preferences')
 
 
-def pysirtet():
+def tetratile()->None:
     '''
     Execute the game
     '''
     try:
-        PySirtet(Config(), master=tk.Tk(className='pysirtet')).mainloop()
+        TetraTile(Config(), master=tk.Tk(className='tetratile')).mainloop()
     except KeyboardInterrupt:
         exit(0)
 
 
-if __name__ == '__main__' : pysirtet()
+if __name__ == '__main__' : tetratile()
