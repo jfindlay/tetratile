@@ -1,0 +1,123 @@
+[project]
+name = "tetratile"
+dynamic = ["version"]
+authors = [
+  { name="Justin Findlay", email="justin@findlay.space" },
+]
+description = "Tetromino tessellation game"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Environment :: X11 Applications",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Games/Entertainment :: Arcade",
+    "Topic :: Games/Entertainment :: Puzzle Games",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/jfindlay/tetratile/"
+"Repository" = "https://github.com/jfindlay/tetratile/"
+"Bug Tracker" = "https://github.com/jfindlay/tetratile/issues/"
+
+[project.scripts]
+tetratile = "tetratile.__main__:main"
+
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["tetratile"]
+
+[tool.setuptools.package-data]
+tetratile = ["py.typed"]
+
+
+[tool.tox]
+isolated_build = true
+requires = [
+    "pytest",
+    "isort",
+    "mypy",
+    "pylint",
+    "ruff",
+    "tk",
+]
+labels = {analyze = ["build", "type-check", "style-check", "cover", "test"], format = ["type-annotate", "style-enforce"]}
+
+[tool.tox.env.build]
+package = "wheel"
+
+[tool.tox.env.type-check]
+allowlist_externals = ["mypy"]
+commands = [
+    ["mypy", "src/", "tests/"],
+]
+
+[tool.tox.env.type-annotate]
+allowlist_externals = ["stubgen"]
+commands = [
+    ["stubgen", "src/", "-o", "src/"],
+]
+
+[tool.tox.env.style-check]
+allowlist_externals = ["isort", "ruff", "pylint"]
+commands = [
+    ["isort", "--check", "src/", "tests/"],
+    ["ruff", "check", "--no-fix", "src/", "tests/"],
+    ["ruff", "format", "--check", "src/", "tests/"],
+    ["pylint", "src/", "tests/"],
+]
+
+[tool.tox.env.style-enforce]
+allowlist_externals = ["isort", "ruff", "pylint"]
+commands = [
+    ["isort", "src/", "tests/"],
+    ["ruff", "check", "--fix", "src/", "tests/"],
+    ["ruff", "format", "src/", "tests/"],
+    ["pylint", "src/", "tests/"],
+]
+
+[tool.tox.env.cover]
+allowlist_externals = ["pytest"]
+commands = [
+    ["pytest", "--cov", "--cov-fail-under=100"]
+]
+
+[tool.tox.env.test]
+allowlist_externals = ["pytest"]
+commands = [
+    ["pytest"],
+]
+
+
+[tool.pylint."MESSAGES CONTROL"]
+disable = [
+    "logging-fstring-interpolation",
+    "redefined-builtin",
+    "too-few-public-methods",
+    "too-many-arguments",
+]
+
+
+[tool.pylint.FORMAT]
+max-line-length = 128
+
+
+[tool.ruff]
+line-length = 128
+
+
+[tool.isort]
+line_length = 128
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
