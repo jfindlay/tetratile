@@ -7,7 +7,7 @@ A tetromino tessellation game.
 When running the install command as a nonprivileged user, tetratile will be installed into standard [XDG locations](https://specifications.freedesktop.org/basedir-spec/latest/), which typically default to `~/.local/bin`, and `~/.local/lib/python*/site-packages`, etc.
 
 ```bash
-$ pip install --break-system-packages tetratile
+$ uv pip install tetratile
 ```
 
 ## Gameplay
@@ -56,12 +56,15 @@ The default keys for translating the active tetromino align with the four finger
 $ git clone https://github.com/jfindlay/tetratile.git
 $ cd tetratile
 # <edit code>
-$ tox run-parallel -m analyze format test
-$ python -m build
+$ uv run pytest
+$ uv run ruff check src/ tests/
+$ uv run ruff format src/ tests/
+$ uv build
 ```
 
 ## TODO
 
+- Use structlog
 - Allow initial rate to be zero
   - Asynchronously trigger piece deactivation and row clearing on piece arriving at bottom rather than during game cycle event
   - Fundamentally conflicting expectations for game behavior with regular cycles?

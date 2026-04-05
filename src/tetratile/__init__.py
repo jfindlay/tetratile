@@ -1,33 +1,51 @@
 #!/usr/bin/env python3
+"""Tetromino tessellation game.
+
+A tetromino puzzle game where players stack falling tetromino pieces
+to form complete rows on the game board.
+
+:attr _VERSION: The version of the installed package.
+:attr tetrominoes: Tuple of all instantiated tetromino objects for the game.
+"""
 
 import copy
-import datetime
+import datetime as dt
 import enum
 import importlib
+import importlib.metadata
 import math
 import random
-import sys
 import tkinter as tk
 import typing
 from dataclasses import dataclass, field
 from decimal import Decimal as D
 
+from .config import GameConfig
+
 _VERSION: str = importlib.metadata.version("tetratile")
 
 
 class Dimension(enum.IntEnum):
-    """
-    Map cardinal cartesian products to integers.
+    """Map cardinal cartesian products to integers.
+
+    :attr D1: One-dimensional.
+    :attr D2: Two-dimensional (for polyominoes).
+    :attr D3: Three-dimensional (for polycubes).
     """
 
     D1 = 1
     D2 = 2
-    D3 = 3  # For polycubes
+    D3 = 3
 
 
 class Degree(enum.IntEnum):
-    """
-    Map polyomino enumerators to cardinal integers.
+    """Map polyomino enumerators to cardinal integers.
+
+    :attr monimo: One square.
+    :attr domino: Two squares.
+    :attr tromino: Three squares.
+    :attr tetromino: Four squares.
+    :attr pentomino: Five squares.
     """
 
     monimo = enum.auto()
@@ -38,29 +56,44 @@ class Degree(enum.IntEnum):
 
 
 class EigenTransformation(enum.IntEnum):
-    """
-    Base class for allowed eigentransformations of polyominos in the 2D lattice.
+    """Allowed eigentransformations of polyominos in the 2D lattice.
+
+    :attr identity: No transformation.
+    :attr rotation: Rotation by ±π/2.
+    :attr horizontal: Translation left or right.
+    :attr vertical: Translation up or down.
+    :attr min: Translate to left edge.
+    :attr max: Translate to right edge.
+    :attr bottom: Translate to bottom.
     """
 
     identity = 0
-    rotation = 1  # Rotation: ±π/2 (counter)clockwise
-    horizontal = 2  # Translation: ±1 left or right
-    vertical = 3  # Translation: ±1 up or down
+    rotation = 1
+    horizontal = 2
+    vertical = 3
+    min = 6
+    max = 7
+    bottom = 8
 
 
 @dataclass
 class Transformation:
-    """
-    Represent a polyomino transformation as an eigentransformation scaled by an integer multiple.
+    """A polyomino transformation as an eigentransformation scaled by an integer multiple.
+
+    :attr eigentransformation: The type of transformation to apply.
+    :attr multiple: The number of times to apply the transformation.
     """
 
     eigentransformation: EigenTransformation
-    multiple: int = 1  # Typically game controls only increment by one unit
+    multiple: int = 1
 
 
 class GameState(enum.StrEnum):
-    """
-    Enumerate game states.
+    """Game states.
+
+    :attr running: Game is actively running.
+    :attr paused: Game is paused.
+    :attr over: Game is over.
     """
 
     running = ""
@@ -69,8 +102,10 @@ class GameState(enum.StrEnum):
 
 
 class EventType(enum.IntEnum):
-    """
-    Enumerate available asynchronous events.
+    """Available asynchronous events.
+
+    :attr iterate: Event to iterate the game loop.
+    :attr remove: Event to remove full rows.
     """
 
     iterate = enum.auto()
@@ -79,105 +114,120 @@ class EventType(enum.IntEnum):
 
 @dataclass
 class Colors:
-    """
-    Store color information used for displaying polyominos in the game.
+    """Store color information used for displaying polyominos in the game.
+
+    :attr normal: The primary color.
+    :attr light: The lighter color variant.
+    :attr dark: The darker color variant.
     """
 
-    normal: str
-    light: str
-    dark: str
+    normal: str = ""
+    light: str = ""
+    dark: str = ""
 
 
 @dataclass
 class Square:
-    """
-    An elemental unit of the grid.
+    """An elemental unit of the grid.
 
-    colors: Color scheme.
-    id: Tkinter item id.
+    :attr colors: Colors for rendering the square.
+    :attr id: Tkinter canvas item ID.
+    :attr is_active: Whether the square is part of the active piece.
+    :attr type: Name of the tetromino occupying this square.
     """
 
     colors: Colors | None = None
     id: int | None = None
     is_active: bool | None = None
+    type: str | None = None
 
 
 class Grid:
-    """
-    The rectangular region of squares that comprises the game state.  The squares map to the integer coordinates in the first
-    quadrant of the cartesian plane such that each square is represented by the (integral) point at its upper right corner.  The
-    origin corresponds to the upper right corner of the lower left square of the grid.
+    """The rectangular region of squares that comprises the game state.
+
+    The squares map to integer coordinates in the first quadrant of the
+    Cartesian plane. Each square is represented by the point at its upper
+    right corner, with the origin at the upper right corner of the
+    lower left square.
+
+    :attr width: Number of columns in the grid.
+    :attr height: Number of rows in the grid.
     """
 
-    def __init__(self, width: int, height: int):
+    def __init__(self, width: int, height: int) -> None:
+        """Initialize the game grid.
+
+        :param width: Number of columns.
+        :param height: Number of rows.
         """
-        Setup game grid
-        """
-        # Initialize internal grid
         self._grid = [[Square() for i in range(height)] for j in range(width)]
         self.width = width
         self.height = height
 
-    def __check_nonnegative(self, v: list[int]) -> None:
+    def __check_nonnegative(self, v: list[int] | tuple[int, int]) -> None:
+        """Validate that coordinates are nonnegative.
+
+        :param v: Coordinates to validate.
+        :raises IndexError: If coordinates are negative.
         """
-        Disallow accessing squares by negative coordinates.  Python allows accessing elements of iterables by one modulus below
-        the residual representation of the array, but we disallow it for simplicity.
-        """
-        if 0 > min(v):
+        if min(v) < 0:
             raise IndexError("grid coordinates must be nonnegative")
 
-    def __getitem__(self, v: list[int]) -> Square:
-        """
-        Retrieve the square at coordinates `v` from the origin.
+    def __getitem__(self, v: list[int] | tuple[int, int]) -> Square:
+        """Retrieve the square at coordinates ``v`` from the origin.
+
+        :param v: Coordinates of the square.
+        :returns: The square at the given coordinates.
+        :raises IndexError: If coordinates are out of bounds or negative.
         """
         self.__check_nonnegative(v)
         return self._grid[v[0]][v[1]]
 
-    def __setitem__(self, v: list[int], square: Square) -> None:
-        """
-        Update the square at coordinates `v` from the origin.
+    def __setitem__(self, v: list[int] | tuple[int, int], square: Square) -> None:
+        """Update the square at coordinates ``v`` from the origin.
+
+        :param v: Coordinates of the square.
+        :param square: The square to place at the coordinates.
+        :raises IndexError: If coordinates are out of bounds or negative.
         """
         self.__check_nonnegative(v)
-        self._grid[v[0]][v[1]].update(type, id)
+        self._grid[v[0]][v[1]] = square
 
     def __iter__(self) -> typing.Generator[list[int], None, None]:
-        """
-        Iterate over the grid squares.
+        """Iterate over the grid squares.
+
+        :yields: Coordinates of each square.
         """
         for x in range(self.width):
             for y in range(self.height):
                 yield [x, y]
 
     def check(self, coords: list[list[int]]) -> bool:
-        """
-        Validate whether the coordinates are all contained in the grid.
+        """Validate whether the coordinates are all contained in the grid.
+
+        :param coords: List of coordinates to validate.
+        :returns: True if all coordinates are valid and squares are unoccupied.
         """
         for v in coords:
-            # Check that v points to the interior of the grid
             try:
                 self[v]
             except IndexError:
                 return False
-            # Check that v points to an unoccupied square
-            if self[v]["type"] is not None:
+            if self[v].type is not None:
                 return False
         return True
 
     def print(self) -> None:
-        """
-        Display grid state.
-        """
-        # Convert columns to rows
+        """Display grid state to stdout."""
         rows: dict[int, dict[int, str]] = {}
         for v in self:
             square = self[v]
             if v[1] not in rows:
                 rows[v[1]] = {}
-            rows[v[1]][v[0]] = " " if square["type"] is None else square["type"]
+            rows[v[1]][v[0]] = " " if square.type is None else square.type
 
-        # Print rows with formatting
         digits = len(str(self.height))
-        row_fmt = "{{:0{}}}".format(digits)
+        row_fmt = f"{{:0{digits}}}"
         print(digits * " " + "+" + 2 * len(self._grid) * "-" + "+")
         for i in reversed(rows.keys()):
             row_image = "".join([2 * rows[i][j] if len(rows[i][j]) == 1 else rows[i][j][:2] for j in sorted(rows[i].keys())])
@@ -187,42 +237,59 @@ class Grid:
 
 @dataclass
 class Polyomino:
-    r"""
-    Define a polyomino by coordinates to the upper right corner of each of its squares and provide the valid transformations for
-    a polyomino on the $\mathbb Z^{\mathrm dim}$ lattice.
+    r"""Define a polyomino by coordinates to each of its squares.
+
+    Provides valid transformations for a polyomino on the
+    :math:`\mathbb Z^{\mathrm dim}` lattice.
+
+    :attr dim: Dimensionality of the polyomino.
+    :attr deg: Degree (number of squares).
+    :attr colors: Colors for rendering.
+    :attr coords: Coordinates to the upper right corner of each square.
+    :attr o: Proper origin, computed from coordinates.
+    :attr name: Name identifier.
+    :attr full: Whether the piece represents a full row.
+    :attr full_below_count: Number of full rows below this piece.
     """
 
     dim: Dimension
     deg: Degree
     colors: Colors
-
-    # Compute the polyomino proper origin from the given coordinates.  To reduce the distance between the polyomino proper
-    # origin and the polyomino center of mass, coordinates can take integral and half-integral values.  Half integer quanta
-    # offer enough resolution to enable desired rotational symmetries.
     coords: list[list[int]]
+
     o: list[D] = field(init=False)
+    name: str = ""
+    full: bool = field(default=False, init=False)
+    full_below_count: int = field(default=0, init=False)
 
-    def __post_init__(self, dim: Dimension, deg: Degree, colors: Colors, coords: list[list[int]]):
-        """
-        Setup polyomino proper origin relative to its coordinates.
-        """
-        self.o = [D(sum([v[d] for v in coords]) / self.deg) for d in range(self.dim)]
+    def __post_init__(self) -> None:
+        """Compute proper origin from coordinates."""
+        self.o = [D(sum([v[d] for v in self.coords]) / self.deg) for d in range(self.dim)]
 
-    def min(self) -> int:
-        """
-        Return the minimum coordinate of the polyomino in the given dimension.
-        """
-        return min([c[self.dim] for c in self.coords])
+    def min(self, dim: Dimension | None = None) -> int:
+        """Return the minimum coordinate of the polyomino in the given dimension.
 
-    def max(self) -> int:
+        :param dim: The dimension to check. Defaults to self.dim.
+        :returns: Minimum coordinate value.
         """
-        Return the maximum coordinate of the polyomino in the given dimension.
+        d = dim if dim is not None else self.dim
+        return min([c[d.value - 1] for c in self.coords])
+
+    def max(self, dim: Dimension | None = None) -> int:
+        """Return the maximum coordinate of the polyomino in the given dimension.
+
+        :param dim: The dimension to check. Defaults to self.dim.
+        :returns: Maximum coordinate value.
         """
-        return max([c[self.dim] for c in self.coords])
+        d = dim if dim is not None else self.dim
+        return max([c[d.value - 1] for c in self.coords])
 
     def transform(self, t: Transformation, grid: Grid) -> bool:
-        """
-        Transform the tetromino in the given grid coordinates.
+        """Transform the polyomino in the given grid coordinates.
+
+        :param t: The transformation to apply.
+        :param grid: The grid to transform within.
+        :returns: True if transformation was successful.
         """
         match t.eigentransformation:
             case EigenTransformation.identity:
@@ -231,16 +298,17 @@ class Polyomino:
                 return self.rotate(t, grid)
             case EigenTransformation.horizontal | EigenTransformation.vertical:
                 return self.translate(t, grid)
+            case EigenTransformation.min | EigenTransformation.max | EigenTransformation.bottom:
+                return self.translate(t, grid)
 
     def rotate(self, r: Transformation, grid: Grid) -> bool:
+        """Rotate the polyomino about its proper origin.
+
+        :param r: Rotation transformation with multiple indicating direction.
+        :param grid: The grid to rotate within.
+        :returns: True if rotation was successful and polyomino fits in grid.
         """
-        Rotate polyomino clockwise or counterclockwise in increments of ±π/2 about its proper origin by the factor provided if
-        the resulting transformation is contained within the grid and places the polyomino on unoccupied squares.
-        """
-        # Prepare new coordinates and rotation tensor
         coords = [[0 for d in range(self.dim)] for i in range(self.deg)]
-        # TODO: The remainder of this function is 2D
-        # Apply rotation "vector" in the angular "direction" as a rotation tensor in the grid coords
         for i in range(self.deg):
             coords[i][0] = int(-r.multiple * (self.coords[i][1] - self.o[1]) + self.o[0])
             coords[i][1] = int(r.multiple * (self.coords[i][0] - self.o[0]) + self.o[1])
@@ -249,266 +317,322 @@ class Polyomino:
             return True
         return False
 
-    def translate(self, t: Transformation, grid: Grid) -> bool:
-        """
-        Translate polyomino by the vector t if the resulting transformation places the polyomino within the grid and on
-        unoccupied squares.
-        """
-        # TODO: Most of this function is 2D
-        # Define w as explicit coordinates in the grid reference frame
-        w = translation(v) if isinstance(v, Translation) else v
-        # Define unit form of w
-        magnitude = int(math.sqrt(w[0] ** 2 + w[1] ** 2)) or 1  # Prevent zero division
-        # Not really a unit in the dir of w, but a projection onto the grid
-        unit = [
-            math.ceil(w[0] / magnitude),
-            math.ceil(w[1] / magnitude),
-        ]
+    def translate(self, t: Transformation | list[int], grid: Grid) -> bool:
+        """Translate the polyomino within the grid.
 
-        # Prepare new coordinates and new proper origin in the grid frame
-        coords = [[0 for d in range(self.dim)] for i in range(self.deg)]
-        o = [0 for d in range(self.dim)]
+        :param t: The translation vector or transformation.
+        :param grid: The grid to translate within.
+        :returns: True if translation was successful.
+        """
+        dx, dy, single_step = self._get_translation(t)
+        if dx is None and dy is None:
+            return False
 
-        # Incrementally translate upto translation magnitude
-        success = False
-        u = unit
-        if u == [0 for d in range(self.dim)]:
-            return success
-        while True:
-            for i in range(self.deg):
-                coords[i][0] = self.coords[i][0] + u[0]
-                coords[i][1] = self.coords[i][1] + u[1]
-                o = [self.o[0] + u[0], self.o[1] + u[1]]
+        if single_step:
+            coords = [[self.coords[i][0] + dx, self.coords[i][1] + dy] for i in range(self.deg)]
             if grid.check(coords):
-                self.coords = [[coord[0], coord[1]] for coord in coords]
-                self.o = [o[0], o[1]]
-                success = True
-                if not incremental:
-                    return success
-            else:
-                return success
+                self.coords = coords
+                self.o = [self.o[0] + dx, self.o[1] + dy]
+                return True
+        else:
+            while True:
+                coords = [[self.coords[i][0] + dx, self.coords[i][1] + dy] for i in range(self.deg)]
+                if not grid.check(coords):
+                    break
+                self.coords = coords
+                self.o = [self.o[0] + dx, self.o[1] + dy]
+            return True
+        return False
+
+    def _get_translation(self, t: Transformation | list[int]) -> tuple[int, int, bool]:
+        """Get translation vector (dx, dy) and whether to use single step or iterate.
+
+        :param t: The translation specification.
+        :returns: (dx, dy, single_step) where single_step indicates whether to
+            move once or iterate until blocked.
+        """
+        if isinstance(t, list):
+            return t[0], t[1], True
+        match t.eigentransformation:
+            case EigenTransformation.horizontal:
+                return t.multiple, 0, True
+            case EigenTransformation.vertical:
+                return 0, -t.multiple, True
+            case EigenTransformation.min:
+                return -1, 0, False
+            case EigenTransformation.max:
+                return 1, 0, False
+            case EigenTransformation.bottom:
+                return 0, -1, False
+        return 0, 0, True
 
 
-@dataclass
+@dataclass(frozen=True)
+class TetrominoData:
+    """Immutable data for a tetromino type.
+
+    :attr name: Single-letter identifier.
+    :attr coords: Coordinates to each square.
+    :attr normal: Primary color hex code.
+    :attr light: Light color hex code.
+    :attr dark: Dark color hex code.
+    :attr o: Proper origin coordinates.
+    """
+
+    name: str
+    coords: tuple[tuple[int, int], ...]
+    normal: str
+    light: str
+    dark: str
+    o: tuple[D, D]
+
+
+class TetrominoType(enum.Enum):
+    """Enumeration of all tetromino types.
+
+    :attr Z: Z-shaped tetromino.
+    :attr S: S-shaped tetromino.
+    :attr l: l-shaped tetromino.
+    :attr T: T-shaped tetromino.
+    :attr o: o-shaped tetromino.
+    :attr L: L-shaped tetromino.
+    :attr J: J-shaped tetromino.
+    """
+
+    Z = TetrominoData("Z", ((-2, 0), (-1, 0), (-1, -1), (0, -1)), "#CC6666", "#F89FAB", "#803C3B", (D(-1), D(-0.5)))
+    S = TetrominoData("S", ((-1, -1), (0, -1), (0, 0), (1, 0)), "#66CC66", "#79FC79", "#3B803B", (D(0), D(-0.5)))
+    l = TetrominoData("l", ((-2, 0), (-1, 0), (0, 0), (1, 0)), "#6666CC", "#7979FC", "#3B3B80", (D(-0.5), D(0)))  # noqa: E741
+    T = TetrominoData("T", ((-1, 0), (0, 0), (0, -1), (1, 0)), "#CCCC66", "#FCFC79", "#80803B", (D(0), D(-0.5)))
+    o = TetrominoData("o", ((0, 0), (0, 1), (1, 1), (1, 0)), "#CC66CC", "#FC79FC", "#803B80", (D(0.5), D(0.5)))  # noqa: E741
+    L = TetrominoData("L", ((-1, 1), (-1, 0), (-1, -1), (0, -1)), "#66CCCC", "#79FCFC", "#3B8080", (D(-1), D(0)))
+    J = TetrominoData("J", ((0, 1), (0, 0), (0, -1), (-1, -1)), "#DAAA00", "#FCC600", "#806200", (D(-0.5), D(0)))
+
+    @property
+    def tetromino(self) -> "Tetromino":
+        """Create a Tetromino instance from this type.
+
+        :returns: A new Tetromino instance with this type's data.
+        """
+        return Tetromino(self.value)
+
+
+def used_keys() -> list[str]:
+    """Return list of keys for the used dictionary.
+
+    :returns: ["total", "Z", "S", "l", "T", "o", "L", "J"].
+    """
+    return ["total"] + [t.value.name for t in TetrominoType]
+
+
 class Tetromino(Polyomino):
-    """ """
+    """Base class for tetrominoes.
+
+    :attr dim: Always Dimension.D2 for tetrominoes.
+    :attr deg: Always Degree.tetromino.
+    :attr name: Single-letter identifier.
+    """
 
     dim: Dimension = Dimension.D2
     deg: Degree = Degree.tetromino
+    name: str = ""
 
+    def __init__(self, data: TetrominoData | None = None) -> None:
+        """Initialize a tetromino.
 
-class Tetrominoes:
-    """
-    Collection of all Tetromino types.
-    """
-
-    class Z(Tetromino):
-        def __post_init__(self):
-            """
-            Instantiate a tetromino from the more generic Polyomino class.
-            """
-            self.coords = [[-2, 0], [-1, 0], [-1, -1], [0, -1]]
-            self.colors = Colors("#CC6666", "#F89FAB", "#803C3B")
-
-    class S(Tetromino):
-        def __post_init__(self):
-            """
-            Instantiate a tetromino from the more generic Polyomino class.
-            """
-            self.coords = ([[-1, -1], [0, -1], [0, 0], [1, 0]],)
-            self.colors = Colors("#66CC66", "#79FC79", "#3B803B")
-
-    class l(Tetromino):
-        def __post_init__(self):
-            """
-            Instantiate a tetromino from the more generic Polyomino class.
-            """
-            self.coords = ([[-2, 0], [-1, 0], [0, 0], [1, 0]],)
-            self.colors = (Colors("#6666CC", "#7979FC", "#3B3B80"),)
-
-    class T(Tetromino):
-        def __post_init__(self):
-            """
-            Instantiate a tetromino from the more generic Polyomino class.
-            """
-            self.coords = ([[-1, 0], [0, 0], [0, -1], [1, 0]],)
-            self.colors = (Colors("#CCCC66", "#FCFC79", "#80803B"),)
-
-    class o(Tetromino):
-        def __post_init__(self):
-            """
-            Instantiate a tetromino from the more generic Polyomino class.
-            """
-            self.coords = ([[0, 0], [0, 1], [1, 1], [1, 0]],)
-            self.colors = (Colors("#CC66CC", "#FC79FC", "#803B80"),)
-
-    class L(Tetromino):
-        def __post_init__(self):
-            """
-            Instantiate a tetromino from the more generic Polyomino class.
-            """
-            self.coords = ([[-1, 1], [-1, 0], [-1, -1], [0, -1]],)
-            self.colors = (Colors("#66CCCC", "#79FCFC", "#3B8080"),)
-
-    class J(Tetromino):
-        def __post_init__(self):
-            """
-            Instantiate a tetromino from the more generic Polyomino class.
-            """
-            self.coords = ([[0, 1], [0, 0], [0, -1], [-1, -1]],)
-            self.colors = (Colors("#DAAA00", "#FCC600", "#806200"),)
-
-    @classmethod
-    def __next__(cls) -> Generator[Tetrominoes, None, None]:
+        :param data: Data to initialize from. If None, creates empty tetromino.
         """
-        Iterate over tetrominoes.
-        """
-        yield from (attr for attr in vars(cls).values() if isinstance(attr, type))
+        self.coords: list[list[int]] = []
+        self.colors: Colors = Colors("", "", "")
+        self.o: list[D] = [D(0), D(0)]
+        if data is not None:
+            self.name = data.name
+            self.coords = [list(c) for c in data.coords]
+            self.colors = Colors(data.normal, data.light, data.dark)
+            self.o = [D(data.o[0]), D(data.o[1])]
 
 
-class PrecisionVar(tk.StringVar):
-    """
-    Represent the value at the specified precision while maintaining the actual value at full precision.
+tetrominoes: tuple[Tetromino, ...] = tuple(t.tetromino for t in TetrominoType)
+
+
+class PrecisionVar:
+    """Represent a value at specified precision while maintaining full precision internally.
+
+    :attr variable: The StringVar containing the formatted display value.
     """
 
-    def __init__(self, *args, value: int | float | None = None, precision: int = 2, **kwargs):
+    def __init__(self, *, value: int | float | None = None, precision: int = 2) -> None:
+        """Initialize the precision variable.
+
+        :param value: Initial value. Defaults to 0.0.
+        :param precision: Number of decimal places for display. Defaults to 2.
         """
-        Setup PrecisionVar object.
-        """
-        self.precision = precision
-        self.float_value = self._validate(value if value is not None else 0.0)
-        super().__init__(*args, value=self._fmt(), **kwargs)
+        self._precision = precision
+        self._float_value = self._validate(value if value is not None else 0.0)
+        self._var = tk.StringVar(value=self._fmt())
 
     def _validate(self, value: float) -> float:
-        """
-        Validate input value.
+        """Validate the value is a nonnegative number.
+
+        :param value: Value to validate.
+        :returns: The validated value as float.
+        :raises TypeError: If value is not a nonnegative number.
         """
         if isinstance(value, (int, float)) and value >= 0:
-            return value
-        else:
-            raise TypeError("value must be a nonnegative number")
+            return float(value)
+        raise TypeError("value must be a nonnegative number")
 
     def _fmt(self) -> str:
-        """
-        Format decimal string representation.
-        """
-        return "{{:.{}f}}".format(self.precision).format(self.float_value)
+        """Format the value for display.
 
-    def get(self, raw: bool = False) -> float:
+        :returns: Formatted string.
         """
-        Get value formatted to specified precision.
-        """
-        return self.float_value if raw else super().get()
+        return f"{{:.{self._precision}f}}".format(self._float_value)
 
-    def set(self, value: float = 0.0) -> None:
+    def get(self, raw: bool = False) -> float | str:
+        """Get the current value.
+
+        :param raw: If True, return the raw float value. Otherwise return formatted string.
+        :returns: The value.
         """
-        Set value.
+        return self._float_value if raw else self._var.get()
+
+    def set(self, value: float) -> None:
+        """Set the value.
+
+        :param value: The new value.
         """
-        self.float_value = self._validate(value)
-        super().set(self._fmt())
+        self._float_value = self._validate(value)
+        self._var.set(self._fmt())
+
+    @property
+    def variable(self) -> tk.StringVar:
+        """The StringVar containing the formatted display value.
+
+        :returns: The StringVar.
+        """
+        return self._var
 
 
-class TimerVar(tk.StringVar):
+class TimerVar:
+    """Timer widget variable with start/stop capability.
+
+    :attr variable: The StringVar containing the formatted time.
     """
-    Timer string widget variable with start/stop capability.
-    """
 
-    def __init__(self, *args, value: datetime.timedelta | None = None, **kwargs):
-        """
-        Setup TimerVar object.
-        """
-        self.set(value if value is not None else datetime.timedelta())
-        super().__init__(*args, value=self._to_str(self.accumulated_elapsed), **kwargs)
+    def __init__(self, *, value: dt.timedelta | None = None) -> None:
+        """Initialize the timer.
 
-    def _to_str(self, value: datetime.timedelta) -> str:
+        :param value: Initial elapsed time. Defaults to zero.
         """
-        Convert value timedelta to string without microseconds.
+        self._accumulated_elapsed = value if value is not None else dt.timedelta()
+        self._active_counting_since: dt.datetime | dt.timedelta = dt.timedelta()
+        self._var = tk.StringVar(value=self._to_str(self._accumulated_elapsed))
+
+    def _to_str(self, value: dt.timedelta) -> str:
+        """Format timedelta for display.
+
+        :param value: Time to format.
+        :returns: Formatted string (first 7 characters).
         """
         return str(value)[:7]
 
-    def get(self, as_seconds: bool = False) -> tk.StringVar:
-        """
-        Get elapsed time as a string or as total seconds.
-        """
-        computed = datetime.now() - self.active_counting_since + self.accumulated_elapsed
-        super().set(
-            self._to_str(computed)
-        )  # TkInter uses an internal method to get the value into a widget, so we need to update the parent value here
-        return computed.total_seconds() if as_seconds else super().get()
+    def get(self, as_seconds: bool = False) -> str | float:
+        """Get the current elapsed time.
 
-    def set(self, value: datetime.timedelta = datetime.timedelta()) -> None:
+        :param as_seconds: If True, return total seconds. Otherwise return formatted string.
+        :returns: The elapsed time.
         """
-        Reset the timer with a new value or update the value to the current time.
+        computed: dt.timedelta
+        if isinstance(self._active_counting_since, dt.datetime):
+            computed = dt.datetime.now() - self._active_counting_since + self._accumulated_elapsed
+        else:
+            computed = self._accumulated_elapsed
+        self._var.set(self._to_str(computed))
+        return computed.total_seconds() if as_seconds else self._var.get()
+
+    def set(self, value: dt.timedelta | None = None) -> None:
+        """Reset the timer.
+
+        :param value: New elapsed time. Defaults to zero.
         """
-        self.accumulated_elapsed = value  # Reset active counter
-        self.active_counting_since = datetime.timedelta()  # Timestamp of last start/resume
+        self._accumulated_elapsed = value if value is not None else dt.timedelta()
+        self._active_counting_since = dt.timedelta()
 
     def start(self) -> None:
-        """
-        Begin/resume counting.
-        """
-        if not self.active_counting_since:  # Start action is idempotent
-            self.active_counting_since = datetime.now()
+        """Start the timer."""
+        if not self._active_counting_since:
+            self._active_counting_since = dt.datetime.now()
 
     def stop(self) -> None:
+        """Stop the timer and accumulate elapsed time."""
+        if isinstance(self._active_counting_since, dt.datetime):
+            self._accumulated_elapsed += dt.datetime.now() - self._active_counting_since
+        self._active_counting_since = dt.timedelta()
+
+    @property
+    def variable(self) -> tk.StringVar:
+        """The StringVar containing the formatted time.
+
+        :returns: The StringVar.
         """
-        Collect active counting into `accumulated_elapsed` and reset `active_counting_since`.
-        """
-        if self.active_counting_since:  # Stop action is idempotent
-            self.accumulated_elapsed += datetime.now() - self.active_counting_since
-            self.active_counting_since = datetime.timedelta()
+        return self._var
 
 
 class Board(tk.Canvas):
-    """
-    Used to display polyomino block grid.
+    """Display polyomino block grid on a Tkinter canvas.
+
+    :attr width: Grid width in squares.
+    :attr height: Grid height in squares.
     """
 
     @property
     def width(self) -> int:
-        return self.grid.width
+        """Grid width in squares."""
+        return self._game_grid.width
 
     @property
     def height(self) -> int:
-        return self.grid.height
+        """Grid height in squares."""
+        return self._game_grid.height
 
-    def __init__(self, opts: dict[str, typing.Any], parent: tk.Frame, width: int, height: int, is_projection: bool = False):
+    def __init__(self, config: GameConfig, parent: tk.Misc, width: int, height: int, is_projection: bool = False) -> None:
+        """Initialize the board.
+
+        :param config: Game configuration.
+        :param parent: Parent widget.
+        :param width: Grid width in squares.
+        :param height: Grid height in squares.
+        :param is_projection: Whether this is a projection (shadow) board.
         """
-        Setup board.
-        """
-        # Setup options
-        self.opts = opts
+        self._config = config
         self.is_projection = is_projection
-        self.border_width = self.opts["scale"] // 16
+        self.border_width = config.board.scale // 16
         self.aspect_proportion = 3 if self.is_projection else 1
         self.full_row_colors = Colors("#DDDDDD", "#FFFFFF", "#BBBBBB")
         self.pause_cover_id = 0
 
-        # Setup internal grid
-        self.grid = Grid(self.opts, width, height)
+        self._game_grid = Grid(width, height)
 
-        # Setup TK
         super().__init__(
             parent,
-            width=self.opts["scale"] * width,
-            height=self.opts["scale"] * height // self.aspect_proportion,
+            width=config.board.scale * width,
+            height=config.board.scale * height // self.aspect_proportion,
         )
-        # Setup board widget
         self.create_rectangle(
             0,
             0,
-            self.opts["scale"] * width,
-            self.opts["scale"] * height,
+            config.board.scale * width,
+            config.board.scale * height,
             fill="black",
             outline="black",
             width=self.border_width,
         )
 
-        if self.opts["debug"]:
-            for v in self.grid:
+        if config.debug:
+            for v in self._game_grid:
                 u = self._transform_coord(v)
                 self.create_text(
-                    (self.opts["scale"] * u[0], self.opts["scale"] * u[1]),
+                    (config.board.scale * u[0], config.board.scale * u[1]),
                     text="{},{}".format(*u),
                     fill="white",
                     font=("Monospace", 5),
@@ -516,98 +640,104 @@ class Board(tk.Canvas):
                 )
 
     def _transform_coord(self, v: list[int]) -> list[int]:
-        """
-        Tetratile treats the game board as the first quadrant of the Cartesian plane with the origin at the lower left corner,
-        whereas Tkinter, conventionally, places the origin in the upper left corner, with positive x and y directions pointing
-        right and down, respectively.
+        """Transform tetratile coordinates to Tkinter coordinates.
 
-        This function transforms tetratile coordinates into Tkinter coordinates.
+        Tetratile uses a Cartesian plane with origin at lower left,
+        while Tkinter uses origin at upper left.
+
+        :param v: Tetratile coordinates.
+        :returns: Tkinter coordinates.
         """
         return [v[0], self.height - 1 - v[1]]
 
     def _draw_square(self, v: list[int], colors: Colors) -> int:
-        """
-        Draw or clear a polyomino square on the board at `v`.
+        """Draw a polyomino square on the board at ``v``.
+
+        :param v: Coordinates of the square.
+        :param colors: Colors to use for rendering.
+        :returns: Tkinter canvas item ID.
         """
         u = self._transform_coord(v)
-        u = [self.opts["scale"] * u[0], self.opts["scale"] * u[1]]
+        scale = self._config.board.scale
+        u = [scale * u[0], scale * u[1]]
         return self.create_rectangle(
             u[0] + self.border_width,
             u[1] + self.border_width,
-            u[0] + self.opts["scale"],
-            u[1] + self.opts["scale"] // self.aspect_proportion,
-            fill=colors["normal"],
-            outline=colors["dark"],
+            u[0] + scale,
+            u[1] + scale // self.aspect_proportion,
+            fill=colors.normal,
+            outline=colors.dark,
             width=self.border_width,
         )
 
     def update(self, piece: Polyomino, clear: bool = False, is_active: bool = False) -> None:
-        """
-        Place or clear piece on the board.
+        """Place or clear a piece on the board.
+
+        :param piece: The piece to place or clear.
+        :param clear: If True, remove the piece. Otherwise place it.
+        :param is_active: Whether the piece is active (falling).
         """
         for v in piece.coords:
             u = [v[0], 0] if self.is_projection else v
-            square = self.grid[u]
+            square = self._game_grid[u]
             if clear:
-                square.update(
-                    {
-                        "type": None,
-                        "id": self.delete(square["id"]),
-                        "colors": {},
-                        "is_active": None,
-                    }
-                )
+                if square.id is not None:
+                    self.delete(square.id)
+                square.type = None
+                square.id = None
+                square.colors = None
+                square.is_active = None
             else:
-                if not square["id"]:
-                    colors = piece.colors[v[0]] if piece.name == "row" and not piece.full else piece.colors
-                    square.update(
-                        {
-                            "type": piece.name,
-                            "id": self._draw_square(u, colors),
-                            "colors": colors,
-                            "is_active": is_active,
-                        }
-                    )
+                if not square.id:
+                    colors = piece.colors
+                    square.type = piece.name
+                    square.id = self._draw_square(u, colors)
+                    square.colors = colors
+                    square.is_active = is_active
 
     def select_full_rows(self) -> bool:
-        """
-        Mark full rows with full row colors prior to removing them.
+        """Mark full rows with full row colors prior to removing them.
 
-        Note: There is a low probability race condition that between the time of marking and the time of removal, new rows could
-        become filled by the introduction of a new piece, such that they are removed and not marked as the board does not
-        persist calculated data, such as which rows are full, by design: this incidental data is stateless and must be
-        recalculated whenever it is needed.  The severity of the race condition is asymptotically constant as the rates of each
-        independent game thread: marking and removing, adding new pieces, scale proportionally.
+        :returns: True if any full rows were found.
         """
         has_full_rows = False
         for y in range(self.height):
-            row_coords = [[x, y] for x in range(self.width) if self.grid[x, y]["type"] and not self.grid[x, y]["is_active"]]
+            row_coords = [
+                [x, y] for x in range(self.width) if self._game_grid[x, y].type and not self._game_grid[x, y].is_active
+            ]
             if len(row_coords) == self.width:
                 has_full_rows = True
                 row = Polyomino(
-                    "row",
-                    {v[0]: self.grid[v]["colors"] for v in row_coords},
-                    row_coords,
+                    dim=Dimension.D2,
+                    deg=Degree.tetromino,
+                    colors=self.full_row_colors,
+                    coords=row_coords,
+                    name="row",
                 )
                 row.full = True
-                row.colors = self.full_row_colors
                 self.update(row, clear=True)
                 self.update(row)
         return has_full_rows
 
     def _get_rows(self) -> tuple[int, list[Polyomino]]:
-        """
-        Gather all full and partial rows.
+        """Gather all full and partial rows.
+
+        :returns: (full_count, rows) where full_count is the number of full rows
+            and rows is a list of row polyominoes.
         """
         rows: list[Polyomino] = []
         full_count = 0
         for y in range(self.height):
-            row_coords = [[x, y] for x in range(self.width) if self.grid[x, y]["type"] and not self.grid[x, y]["is_active"]]
+            row_coords = [
+                [x, y] for x in range(self.width) if self._game_grid[x, y].type and not self._game_grid[x, y].is_active
+            ]
             if len(row_coords):
                 row = Polyomino(
-                    "row",
-                    {v[0]: self.grid[v]["colors"] for v in row_coords},
-                    row_coords,
+                    dim=Dimension.D2,
+                    deg=Degree.tetromino,
+                    colors=Colors(),
+                    coords=row_coords,
+                    name="row",
                 )
                 rows.append(row)
                 row.full = False
@@ -621,8 +751,9 @@ class Board(tk.Canvas):
         return full_count, rows
 
     def remove_full_rows(self) -> int:
-        """
-        Remove full rows and move partial rows down into the vacancies; return number of removed rows.
+        """Remove full rows and move partial rows down.
+
+        :returns: Number of rows removed.
         """
         full_count, rows = self._get_rows()
         for row in rows:
@@ -630,62 +761,61 @@ class Board(tk.Canvas):
                 self.update(row, clear=True)
             elif row.full_below_count:
                 self.update(row, clear=True)
-                row.translate([0, -row.full_below_count], self.grid)
+                row.translate([0, -row.full_below_count], self._game_grid)
                 self.update(row)
         return full_count
 
     def clear(self) -> None:
-        """
-        Remove all occupied squares from the board.
-        """
-        full_count, rows = self._get_rows()
+        """Remove all occupied squares from the board."""
+        _, rows = self._get_rows()
         for row in rows:
             self.update(row, clear=True)
 
     def add_pause_cover(self) -> None:
-        """
-        Cover the board when game is paused.
-        """
+        """Cover the board when game is paused."""
         if not self.pause_cover_id:
+            scale = self._config.board.scale
             self.pause_cover_id = self.create_rectangle(
                 0,
                 0,
-                self.opts["scale"] * (self.width + 1),
-                self.opts["scale"] * (self.height + 1),
+                scale * (self.width + 1),
+                scale * (self.height + 1),
                 fill="black",
                 outline="black",
                 width=0,
             )
 
     def remove_pause_cover(self) -> None:
-        """
-        Uncover the board when game is paused.
-        """
+        """Uncover the board when game is resumed."""
         if self.pause_cover_id > 0:
             self.delete(self.pause_cover_id)
             self.pause_cover_id = 0
 
 
 class TetraTile(tk.Frame):
+    """Main game window.
+
+    :attr board: The main game board.
+    :attr preview_board: The preview board showing next piece.
+    :attr projection_board: The projection/shadow board.
+    :attr state: Current game state.
     """
-    Main game window.
-    """
 
-    def __init__(self, config: dict[str, typing.Any], master=None):
+    def __init__(self, config: GameConfig, master: tk.Tk | None = None) -> None:
+        """Initialize the game.
+
+        :param config: Game configuration.
+        :param master: Tkinter root window.
+
+        :raises TypeError: If master is None.
         """
-        Setup game.
-        """
-        # Setup options
-        self.pdeg = 4  # Polyomino degree (hardcoded to tetromino)
-        self.opts = config.opts
+        self.pdeg = 4
+        self._config = config
 
-        # Setup game data and state
-        self.removed = {r + 1: tk.IntVar() for r in range(self.pdeg)}
-        self.removed["total"] = tk.IntVar()
-
-        self.used = {t.name: tk.IntVar() for t in tetrominoes}
-        self.used["total"] = tk.IntVar()
-        self.next_piece: Polyomino | None = None
+        self.removed_by_count: list[tk.IntVar] = [tk.IntVar() for _ in range(self.pdeg)]
+        self.removed_total: tk.IntVar = tk.IntVar()
+        self.used: dict[str, tk.IntVar] = {name: tk.IntVar() for name in used_keys()}
+        self.next_piece: Tetromino | None = None
         self.piece: Polyomino | None = None
 
         self.time_elapsed = TimerVar()
@@ -698,102 +828,107 @@ class TetraTile(tk.Frame):
         self.state_name = tk.StringVar()
         self.set_state(GameState.running)
 
-        # Setup TK
         super().__init__(master)
-        self.master = master
+        if master is None:
+            raise TypeError("master cannot be None")
+        self.master: tk.Tk = master
         self.pack()
         self.create_widgets()
         self.setup_events()
         self.add_piece()
-        self.iterate_id = self._schedule(EventType.iterate)  # Start the game cycle
+        self.iterate_id = self._schedule(EventType.iterate)
 
     def _schedule(self, event_type: EventType) -> str:
-        """
-        Schedule an asynchronous event.
+        """Schedule an asynchronous event.
+
+        :param event_type: The type of event to schedule.
+        :returns: Tkinter after callback ID.
         """
         if event_type == EventType.iterate:
             action = self.iterate
             rate = self.rate.get(raw=True)
         elif event_type == EventType.remove:
             action = self.remove_full_rows
-            rate = self.rate.get(raw=True) * self.opts["remove_freq"]
+            rate = self.rate.get(raw=True) * self._config.remove_freq
 
-        # Convert seconds to milliseconds.  Physical machines will not wait
-        # eternally, so limit the callback lifetime by a factor of 1/ε.
-        return self.master.after(int(1e3 / (rate + self.opts["epsilon"])), action)
+        return self.master.after(int(1e3 / (float(rate) + self._config.epsilon)), action)
 
     def _update_removed(self, rows_removed: int) -> None:
+        """Update the count of rows removed.
+
+        :param rows_removed: Number of rows removed in the last operation.
         """
-        Update the count of rows removed.
-        """
-        self.removed[rows_removed].set(self.removed[rows_removed].get() + 1)
-        self.removed["total"].set(self.removed["total"].get() + rows_removed)
+        if 1 <= rows_removed <= self.pdeg:
+            idx = rows_removed - 1
+            self.removed_by_count[idx].set(self.removed_by_count[idx].get() + 1)
+        self.removed_total.set(self.removed_total.get() + rows_removed)
 
     def _update_rates(self) -> None:
-        """
-        Update computed rates.
-        """
-        new_rate = self.opts["initial_rate"] * (
-            1 if self.opts["constant"] else math.log(self.removed["total"].get() / 2**4 + 2, 2)
-        )
-        self.rate.set(max(new_rate, self.opts["min_rate"]))
-        self.piece_rate.set(self.used["total"].get() / (self.time_elapsed.get(as_seconds=True) or 1))
-        self.row_rate.set(self.removed["total"].get() / (self.time_elapsed.get(as_seconds=True) or 1))
+        """Update computed rates."""
+        initial = float(self._config.initial_rate)
+        constant = bool(self._config.constant)
+        min_rate = float(self._config.min_rate)
+        new_rate = initial * (1 if constant else math.log(self.removed_total.get() / 2**4 + 2, 2))
+        self.rate.set(max(new_rate, min_rate))
+        elapsed = float(self.time_elapsed.get(as_seconds=True) or 1)
+        self.piece_rate.set(self.used["total"].get() / elapsed)
+        self.row_rate.set(self.removed_total.get() / elapsed)
 
     def _update_piece_on_board(self, clear: bool = False, is_active: bool = True) -> None:
+        """Place or clear the current piece and its projection on the board.
+
+        :param clear: If True, remove the piece. Otherwise place it.
+        :param is_active: Whether the piece is active (falling).
         """
-        Place or clear piece and its projection or shadow on the board.
-        """
-        self.board.update(self.piece, clear=clear, is_active=is_active)
-        if self.opts["shadow"] == "projection":
-            self.projection_board.update(self.piece, clear=clear, is_active=is_active)
+        if self.piece is not None:
+            self.board.update(self.piece, clear=clear, is_active=is_active)
+            if self._config.shadow == "projection":
+                self.projection_board.update(self.piece, clear=clear, is_active=is_active)
 
     def create_widgets(self) -> None:
-        """
-        Pack in game widgets.
-        """
+        """Pack in game widgets."""
         # Game frame
         self.game = tk.Frame(self)
         self.game.pack(side="left")
 
         self.board = Board(
-            self.opts,
+            self._config,
             self.game,
-            self.opts["board"]["width"],
-            self.opts["board"]["height"],
+            self._config.board.width,
+            self._config.board.height,
         )
         self.board.pack(side="top")
 
-        if self.opts["shadow"] == "projection":
-            self.projection_board = Board(self.opts, self.game, self.opts["board"]["width"], 1, is_projection=True)
+        if self._config.shadow == "projection":
+            self.projection_board = Board(self._config, self.game, self._config.board.width, 1, is_projection=True)
             self.projection_board.pack(side="top")
 
         # Marquee frame
         self.marquee = tk.Frame(self)
-        self.marquee.pack(side="right", padx=self.opts["scale"], pady=self.opts["scale"])
+        self.marquee.pack(side="right", padx=self._config.board.scale, pady=self._config.board.scale)
 
         self.preview_frame = tk.LabelFrame(self.marquee, text="preview")
         self.preview_frame.pack(side="top")
-        self.preview_board = Board(self.opts, self.preview_frame, self.pdeg, self.pdeg)
+        self.preview_board = Board(self._config, self.preview_frame, self.pdeg, self.pdeg)
         self.preview_board.pack(side="top")
 
         self.rate_frame = tk.LabelFrame(self.marquee, text="fall rate")
         self.rate_frame.pack(side="top")
-        self.rate_display = tk.Label(self.rate_frame, textvariable=self.rate)
+        self.rate_display = tk.Label(self.rate_frame, textvariable=self.rate.variable)
         self.rate_display.pack(side="left")
         self.rate_unit = tk.Label(self.rate_frame, text="blocks/sec")
         self.rate_unit.pack(side="left")
 
         self.piece_rate_frame = tk.LabelFrame(self.marquee, text="piece rate")
         self.piece_rate_frame.pack(side="top")
-        self.piece_rate_display = tk.Label(self.piece_rate_frame, textvariable=self.piece_rate)
+        self.piece_rate_display = tk.Label(self.piece_rate_frame, textvariable=self.piece_rate.variable)
         self.piece_rate_display.pack(side="left")
         self.piece_rate_unit = tk.Label(self.piece_rate_frame, text="pieces/sec")
         self.piece_rate_unit.pack(side="left")
 
         self.row_rate_frame = tk.LabelFrame(self.marquee, text="row rate")
         self.row_rate_frame.pack(side="top")
-        self.row_rate_display = tk.Label(self.row_rate_frame, textvariable=self.row_rate)
+        self.row_rate_display = tk.Label(self.row_rate_frame, textvariable=self.row_rate.variable)
         self.row_rate_display.pack(side="left")
         self.row_rate_unit = tk.Label(self.row_rate_frame, text="rows/sec")
         self.row_rate_unit.pack(side="left")
@@ -801,57 +936,65 @@ class TetraTile(tk.Frame):
         self.used_frame = tk.LabelFrame(self.marquee, text="pieces used")
         self.used_frame.pack(side="top")
 
-        class Total:
-            name = "total"
-
-        for t in tetrominoes + (Total(),):
-            stack: dict[str, tk.Widget] = {}
-            stack["frame"] = tk.Frame(self.used_frame, width=12)
-            stack["frame"].pack(side="top")
-            stack["quantity"] = tk.Label(stack["frame"], textvariable=self.used[t.name])
-            stack["quantity"].pack(side="left")
-            stack["unit"] = tk.Label(
-                stack["frame"],
+        total_obj = type("Total", (), {"name": "total"})()
+        for t in (*tetrominoes, total_obj):
+            used_widget: dict[str, tk.Widget] = {}
+            used_widget["frame"] = tk.Frame(self.used_frame, width=12)
+            used_widget["frame"].pack(side="top")
+            used_widget["quantity"] = tk.Label(used_widget["frame"], textvariable=self.used[t.name])
+            used_widget["quantity"].pack(side="left")
+            used_widget["unit"] = tk.Label(
+                used_widget["frame"],
                 text="{}{}".format("" if t.name == "total" else "x", t.name),
             )
-            stack["unit"].pack(side="left")
+            used_widget["unit"].pack(side="left")
 
         self.removed_frame = tk.LabelFrame(self.marquee, text="rows removed")
         self.removed_frame.pack(side="top")
-        for r in list(range(1, self.pdeg + 1)) + ["total"]:
-            stack: dict[str, tk.Widget] = {}
-            stack["frame"] = tk.Frame(self.removed_frame, width=12)
-            stack["frame"].pack(side="top")
-            stack["quantity"] = tk.Label(stack["frame"], textvariable=self.removed[r])
-            stack["quantity"].pack(side="left")
-            stack["unit"] = tk.Label(stack["frame"], text="{}{}".format("" if r == "total" else "x", r))
-            stack["unit"].pack(side="left")
+        for idx, var in enumerate(self.removed_by_count):
+            r = idx + 1
+            removed_widget: dict[str, tk.Widget] = {}
+            removed_widget["frame"] = tk.Frame(self.removed_frame, width=12)
+            removed_widget["frame"].pack(side="top")
+            removed_widget["quantity"] = tk.Label(removed_widget["frame"], textvariable=var)
+            removed_widget["quantity"].pack(side="left")
+            removed_widget["unit"] = tk.Label(removed_widget["frame"], text=f"x{r}")
+            removed_widget["unit"].pack(side="left")
+        removed_widget["frame"] = tk.Frame(self.removed_frame, width=12)
+        removed_widget["frame"].pack(side="top")
+        removed_widget["quantity"] = tk.Label(removed_widget["frame"], textvariable=self.removed_total)
+        removed_widget["quantity"].pack(side="left")
+        removed_widget["unit"] = tk.Label(removed_widget["frame"], text="total")
+        removed_widget["unit"].pack(side="left")
 
         self.time_elapsed_frame = tk.LabelFrame(self.marquee, text="elapsed time")
         self.time_elapsed_frame.pack(side="top")
-        self.time_elapsed_display = tk.Label(self.time_elapsed_frame, textvariable=self.time_elapsed, width=12)
+        self.time_elapsed_display = tk.Label(self.time_elapsed_frame, textvariable=self.time_elapsed.variable, width=12)
         self.time_elapsed_display.pack(side="top")
 
         self.state_display = tk.Label(self.marquee, textvariable=self.state_name)
         self.state_display.pack(side="top")
 
     def set_state(self, state: GameState) -> None:
-        """
-        Set the game state.
+        """Set the game state.
+
+        :param state: The new game state.
         """
         self.state = state
         self.state_name.set(state)
 
     def setup_events(self) -> None:
+        """Respond to inputs and other game conditions.
+
+        Binds keyboard events to their handler methods.
         """
-        Respond to inputs and other game conditions: mainly key input.
-        """
-        for name, key in self.opts["keys"].items():
+        for name, key in self._config.keys.model_dump().items():
             self.master.bind(key, getattr(self, name))
 
     def pause(self, event: tk.Event) -> None:
-        """
-        (Un)pause the game.  This function is bound by `setup_events` to the key the user configures for pausing.
+        """Toggle pause state.
+
+        :param event: Tkinter event (unused).
         """
         if self.state == GameState.running:
             self.after_cancel(self.iterate_id)
@@ -866,26 +1009,84 @@ class TetraTile(tk.Frame):
                 board.remove_pause_cover()
             self.set_state(GameState.running)
 
-    def transform(self, event: tk.Event) -> None:
-        """
-        Transform the current piece.
+    def left(self, event: tk.Event) -> None:
+        """Translate the current piece one step left.
+
+        :param event: Tkinter event (unused).
         """
         if self.state == GameState.running:
-            self.move_piece(transformation)
+            self.move_piece(Transformation(EigenTransformation.horizontal, -1))
+
+    def right(self, event: tk.Event) -> None:
+        """Translate the current piece one step right.
+
+        :param event: Tkinter event (unused).
+        """
+        if self.state == GameState.running:
+            self.move_piece(Transformation(EigenTransformation.horizontal, 1))
+
+    def down(self, event: tk.Event) -> None:
+        """Translate the current piece one step down.
+
+        :param event: Tkinter event (unused).
+        """
+        if self.state == GameState.running:
+            self.move_piece(Transformation(EigenTransformation.vertical, 1))
+
+    def left_side(self, event: tk.Event) -> None:
+        """Translate the current piece to the left edge.
+
+        :param event: Tkinter event (unused).
+        """
+        if self.state == GameState.running:
+            while self.move_piece(Transformation(EigenTransformation.horizontal, -1)):
+                pass
+
+    def right_side(self, event: tk.Event) -> None:
+        """Translate the current piece to the right edge.
+
+        :param event: Tkinter event (unused).
+        """
+        if self.state == GameState.running:
+            while self.move_piece(Transformation(EigenTransformation.horizontal, 1)):
+                pass
+
+    def rotate_left(self, event: tk.Event) -> None:
+        """Rotate the current piece counterclockwise.
+
+        :param event: Tkinter event (unused).
+        """
+        if self.state == GameState.running:
+            self.move_piece(Transformation(EigenTransformation.rotation, -1))
+
+    def rotate_right(self, event: tk.Event) -> None:
+        """Rotate the current piece clockwise.
+
+        :param event: Tkinter event (unused).
+        """
+        if self.state == GameState.running:
+            self.move_piece(Transformation(EigenTransformation.rotation, 1))
+
+    def drop(self, event: tk.Event) -> None:
+        """Drop the current piece to the bottom.
+
+        :param event: Tkinter event (unused).
+        """
+        if self.state == GameState.running:
+            while self.move_piece(Transformation(EigenTransformation.vertical, 1)):
+                pass
 
     def restart(self) -> None:
-        """
-        Restart the game.
-        """
-        # Setup game state
+        """Restart the game."""
         self.board.clear()
         self.projection_board.clear()
-        self.piece: Polyomino = None
+        self.piece = None
 
-        for removed_counter in self.removed.values():
-            removed_counter.set(0)
-        for piece_counter in self.used.values():
-            piece_counter.set(0)
+        for var in self.removed_by_count:
+            var.set(0)
+        self.removed_total.set(0)
+        for var in self.used.values():
+            var.set(0)
 
         self.time_elapsed.set()
         self.time_elapsed.start()
@@ -893,26 +1094,26 @@ class TetraTile(tk.Frame):
         self._update_rates()
         self.set_state(GameState.running)
 
-        # Setup TK
         self.restart_button.destroy()
         self.add_piece()
         self.iterate_id = self._schedule(EventType.iterate)
 
     def iterate(self) -> None:
-        """
-        Process one game cycle by updating everything needing monotonic modification per cycle, such as moving the active piece
-        one row down if possible.
+        """Process one game cycle.
+
+        Moves the active piece down one row if possible,
+        handles row removal, and schedules the next iteration.
         """
         if self.state == GameState.paused:
             return
-        if not self.move_piece(Translation.down):
-            self._update_piece_on_board(clear=True)  # Remove active
-            self._update_piece_on_board(is_active=False)  # Now inactive
+        if not self.move_piece(Transformation(EigenTransformation.vertical, 1)):
+            self._update_piece_on_board(clear=True)
+            self._update_piece_on_board(is_active=False)
             if self.board.select_full_rows():
                 self._schedule(EventType.remove)
             self.add_piece()
-        if self.opts["debug"]:
-            self.board.grid.print()
+        if self._config.debug:
+            self.board._game_grid.print()
         if self.state == GameState.running:
             self._update_rates()
             self.iterate_id = self._schedule(EventType.iterate)
@@ -921,72 +1122,68 @@ class TetraTile(tk.Frame):
             self.restart_button.pack(side="top")
 
     def add_piece(self) -> None:
-        """
-        Add a tetromino to the top center of the board.
-        """
+        """Add a tetromino to the top center of the board."""
 
         def get_next_piece() -> None:
-            """
-            Get a new piece.
-            """
+            """Get a new piece for preview."""
             self.preview_board.clear()
-            self.next_piece = random.choice(Tetrominoes)()
+            self.next_piece = copy.deepcopy(random.choice(tetrominoes))
             self.next_piece.translate(
                 [
                     self.preview_board.width // 2,
                     self.preview_board.height // 2,
                 ],
-                self.preview_board.grid,
+                self.preview_board._game_grid,
             )
             self.preview_board.update(self.next_piece)
 
         if not self.next_piece:
             get_next_piece()
-        self.piece = copy.deepcopy(self.next_piece)
-        self.used[self.next_piece.name].set(self.used[self.next_piece.name].get() + 1)
+        piece = copy.deepcopy(self.next_piece)
+        assert piece is not None
+        self.used[piece.name].set(self.used[piece.name].get() + 1)
         self.used["total"].set(self.used["total"].get() + 1)
         get_next_piece()
 
-        if self.piece.translate(
+        if piece.translate(
             [
                 self.board.width // 2 - self.preview_board.width // 2,
-                self.board.height - 1 - self.piece.max(Dimension.y),
+                self.board.height - 1 - piece.max(Dimension.D2),
             ],
-            self.board.grid,
+            self.board._game_grid,
         ):
-            if self.opts["shadow"] == "projection":
+            if self._config.shadow == "projection":
                 self.projection_board.clear()
+            self.piece = piece
             self._update_piece_on_board()
         else:
+            self.piece = piece
             self.set_state(GameState.over)
 
     def move_piece(self, transformation: Transformation) -> bool:
+        """Move current piece according to the transformation requested.
+
+        :param transformation: The transformation to apply.
+        :returns: True if the move was successful.
         """
-        Move current piece according to the movement requested.
-        """
-        # Erase piece from board before testing if transformation is available
+        assert self.piece is not None
         self._update_piece_on_board(clear=True)
-        # Apply the transformation on the current piece if possible
-        result = self.piece.transform(transformation, self.board.grid)
-        # (Re)place
+        result = self.piece.transform(transformation, self.board._game_grid)
         self._update_piece_on_board()
         return result
 
     def remove_full_rows(self) -> None:
-        """
-        Remove full rows and move partial rows down into the vacancies.
-        """
+        """Remove full rows and move partial rows down into the vacancies."""
         full_count = self.board.remove_full_rows()
         self._update_removed(full_count)
 
 
 class Preferences(tk.Frame):
-    """
-    Dialog for editing game preferences.
-    """
+    """Dialog for editing game preferences."""
 
-    def __init__(self):
-        """
-        Setup preferences dialog.
+    def __init__(self) -> None:
+        """Initialize the preferences dialog.
+
+        :raises NotImplementedError: Preferences dialog is not yet implemented.
         """
         raise NotImplementedError("Cannot create preferences dialog")
