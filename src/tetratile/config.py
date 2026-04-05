@@ -121,10 +121,11 @@ class GameConfig(BaseModel):
         target.write_text(self.model_dump_json(include={"board", "game", "keys"}))
 
     @classmethod
-    def from_file(cls, path: Path) -> GameConfig:
+    def from_file(cls, path: Path, *, create_default: bool = False) -> GameConfig:
         """Load configuration from TOML file with defaults.
 
         :param path: Directory containing tetratile.toml.
+        :param create_default: If True, create default config file if missing.
         :returns: Configuration from file or defaults.
         """
         config = cls()
@@ -134,6 +135,8 @@ class GameConfig(BaseModel):
             data = tomllib.loads(config_file.read_text())
             config = cls.model_validate(data)
             config.config_file = path
+        elif create_default:
+            config.write_to_file()
         return config
 
 

@@ -64,6 +64,7 @@ $ uv build
 
 ## TODO
 
+- Project package/module reorganization?
 - Use structlog
 - Allow initial rate to be zero
   - Asynchronously trigger piece deactivation and row clearing on piece arriving at bottom rather than during game cycle event

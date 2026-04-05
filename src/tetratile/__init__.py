@@ -832,6 +832,7 @@ class TetraTile(tk.Frame):
         if master is None:
             raise TypeError("master cannot be None")
         self.master: tk.Tk = master
+        self._create_menubar()
         self.pack()
         self.create_widgets()
         self.setup_events()
@@ -982,6 +983,19 @@ class TetraTile(tk.Frame):
         """
         self.state = state
         self.state_name.set(state)
+
+    def _create_menubar(self) -> None:
+        """Create the application menubar."""
+        from .config_ui import ConfigUI
+
+        menubar = tk.Menu(self.master)
+        self.master.config(menu=menubar)
+
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="Preferences...", command=lambda: ConfigUI(self.master, self._config))
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.master.quit)
 
     def setup_events(self) -> None:
         """Respond to inputs and other game conditions.

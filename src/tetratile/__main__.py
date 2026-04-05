@@ -35,7 +35,7 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    config = GameConfig.from_file(Path(args.config_file) if args.config_file else Path.cwd())
+    config = GameConfig.from_file(Path(args.config_file) if args.config_file else Path.cwd(), create_default=True)
     if args.debug:
         config.debug = args.debug
     if args.size is not None:
