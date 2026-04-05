@@ -64,6 +64,7 @@ $ uv build
 
 ## TODO
 
+- If a piece is rotated but near a constraint that would prevent the rotation, like near the board top, sides, bottom, or near the stack: try pushing the piece away from the constraint towards the center of the board to enable the rotation.
 - Project package/module reorganization?
 - Use structlog
 - Allow initial rate to be zero

@@ -303,8 +303,10 @@ class ConfigUI(tk.Toplevel):
         self._original.remove_freq = self._config.remove_freq
         self._original.keys = self._config.keys
         self._original.write_to_file()
+        self.grab_release()
         self.destroy()
 
     def _on_cancel(self) -> None:
         """Discard changes and close."""
+        self.grab_release()
         self.destroy()

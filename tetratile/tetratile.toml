@@ -1,0 +1,1 @@
+{"debug":false,"board":{"scale":32,"width":10,"height":22},"epsilon":6.661338147750939e-16,"min_rate":0.0,"initial_rate":1.0,"remove_freq":1,"constant":false,"shadow":"projection","keys":{"pause":"p","left":",","right":".","left_side":"z","right_side":"/","rotate_left":"m","rotate_right":"v","down":"x","drop":"c"}}

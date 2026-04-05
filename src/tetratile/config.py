@@ -118,7 +118,7 @@ class GameConfig(BaseModel):
             raise ValueError("No config file path specified")
         target = Path(target) / "tetratile" / "tetratile.toml"
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(self.model_dump_json(include={"board", "game", "keys"}))
+        target.write_text(self.model_dump_json(exclude_none=True))
 
     @classmethod
     def from_file(cls, path: Path, *, create_default: bool = False) -> GameConfig:
@@ -132,9 +132,15 @@ class GameConfig(BaseModel):
         config.config_file = path
         config_file = path / "tetratile" / "tetratile.toml"
         if config_file.exists():
-            data = tomllib.loads(config_file.read_text())
-            config = cls.model_validate(data)
-            config.config_file = path
+            try:
+                data = tomllib.loads(config_file.read_text())
+                config = cls.model_validate(data)
+                config.config_file = path
+            except Exception:
+                config = cls()
+                config.config_file = path
+                if create_default:
+                    config.write_to_file()
         elif create_default:
             config.write_to_file()
         return config
