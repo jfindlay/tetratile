@@ -10,7 +10,6 @@ import pytest
 
 from tetratile import (
     Colors,
-    Degree,
     Dimension,
     EigenTransformation,
     Grid,
@@ -83,7 +82,7 @@ class TestPolyomino:
         """Test Polyomino.min returns correct minimum coordinate."""
         ordinal: int = random.randint(2, 11)
         coords: list[list[int]] = [[random.randint(0, self.grid.height) for _i in range(2)] for _j in range(ordinal)]
-        p = Polyomino(dim=Dimension.D2, deg=Degree.monimo, colors=Colors(), coords=coords)
+        p = Polyomino(dim=Dimension.D2, colors=Colors(), coords=coords)
 
         for dim in (Dimension.D1, Dimension.D2):
             assert p.min(dim) == min([c[dim.value - 1] for c in coords])
@@ -92,7 +91,7 @@ class TestPolyomino:
         """Test Polyomino.max returns correct maximum coordinate."""
         ordinal: int = random.randint(2, 11)
         coords: list[list[int]] = [[random.randint(0, self.grid.height) for _i in range(2)] for _j in range(ordinal)]
-        p = Polyomino(dim=Dimension.D2, deg=Degree.monimo, colors=Colors(), coords=coords)
+        p = Polyomino(dim=Dimension.D2, colors=Colors(), coords=coords)
 
         for dim in (Dimension.D1, Dimension.D2):
             assert p.max(dim) == max([c[dim.value - 1] for c in coords])

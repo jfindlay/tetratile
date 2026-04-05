@@ -38,23 +38,6 @@ class Dimension(enum.IntEnum):
     D3 = 3
 
 
-class Degree(enum.IntEnum):
-    """Map polyomino enumerators to cardinal integers.
-
-    :attr monimo: One square.
-    :attr domino: Two squares.
-    :attr tromino: Three squares.
-    :attr tetromino: Four squares.
-    :attr pentomino: Five squares.
-    """
-
-    monimo = enum.auto()
-    domino = enum.auto()
-    tromino = enum.auto()
-    tetromino = enum.auto()
-    pentomino = enum.auto()
-
-
 class EigenTransformation(enum.IntEnum):
     """Allowed eigentransformations of polyominos in the 2D lattice.
 
@@ -253,7 +236,6 @@ class Polyomino:
     """
 
     dim: Dimension
-    deg: Degree
     colors: Colors
     coords: list[list[int]]
 
@@ -264,7 +246,7 @@ class Polyomino:
 
     def __post_init__(self) -> None:
         """Compute proper origin from coordinates."""
-        self.o = [D(sum([v[d] for v in self.coords]) / self.deg) for d in range(self.dim)]
+        self.o = [D(sum([v[d] for v in self.coords]) / len(self.coords)) for d in range(self.dim)]
 
     def min(self, dim: Dimension | None = None) -> int:
         """Return the minimum coordinate of the polyomino in the given dimension.
@@ -308,8 +290,8 @@ class Polyomino:
         :param grid: The grid to rotate within.
         :returns: True if rotation was successful and polyomino fits in grid.
         """
-        coords = [[0 for d in range(self.dim)] for i in range(self.deg)]
-        for i in range(self.deg):
+        coords = [[0 for d in range(self.dim)] for _ in self.coords]
+        for i, _ in enumerate(self.coords):
             coords[i][0] = int(-r.multiple * (self.coords[i][1] - self.o[1]) + self.o[0])
             coords[i][1] = int(r.multiple * (self.coords[i][0] - self.o[0]) + self.o[1])
         if grid.check(coords):
@@ -329,14 +311,14 @@ class Polyomino:
             return False
 
         if single_step:
-            coords = [[self.coords[i][0] + dx, self.coords[i][1] + dy] for i in range(self.deg)]
+            coords = [[self.coords[i][0] + dx, self.coords[i][1] + dy] for i, _ in enumerate(self.coords)]
             if grid.check(coords):
                 self.coords = coords
                 self.o = [self.o[0] + dx, self.o[1] + dy]
                 return True
         else:
             while True:
-                coords = [[self.coords[i][0] + dx, self.coords[i][1] + dy] for i in range(self.deg)]
+                coords = [[self.coords[i][0] + dx, self.coords[i][1] + dy] for i, _ in enumerate(self.coords)]
                 if not grid.check(coords):
                     break
                 self.coords = coords
@@ -428,12 +410,10 @@ class Tetromino(Polyomino):
     """Base class for tetrominoes.
 
     :attr dim: Always Dimension.D2 for tetrominoes.
-    :attr deg: Always Degree.tetromino.
     :attr name: Single-letter identifier.
     """
 
     dim: Dimension = Dimension.D2
-    deg: Degree = Degree.tetromino
     name: str = ""
 
     def __init__(self, data: TetrominoData | None = None) -> None:
@@ -449,6 +429,7 @@ class Tetromino(Polyomino):
             self.coords = [list(c) for c in data.coords]
             self.colors = Colors(data.normal, data.light, data.dark)
             self.o = [D(data.o[0]), D(data.o[1])]
+        self.dim = Dimension.D2
 
 
 tetrominoes: tuple[Tetromino, ...] = tuple(t.tetromino for t in TetrominoType)
@@ -709,7 +690,6 @@ class Board(tk.Canvas):
                 has_full_rows = True
                 row = Polyomino(
                     dim=Dimension.D2,
-                    deg=Degree.tetromino,
                     colors=self.full_row_colors,
                     coords=row_coords,
                     name="row",
@@ -734,7 +714,6 @@ class Board(tk.Canvas):
             if len(row_coords):
                 row = Polyomino(
                     dim=Dimension.D2,
-                    deg=Degree.tetromino,
                     colors=Colors(),
                     coords=row_coords,
                     name="row",
