@@ -9,9 +9,45 @@ import re
 import sys
 import tomllib
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
+
+
+def _dict_to_toml(data: dict[str, Any], indent: int = 0) -> str:
+    """Convert a dictionary to TOML format.
+
+    :param data: Dictionary to convert.
+    :param indent: Current indentation level.
+    :returns: TOML-formatted string.
+    """
+    lines: list[str] = []
+    prefix = "    " * indent
+
+    scalars: list[tuple[str, Any]] = []
+    tables: list[tuple[str, dict[str, Any]]] = []
+
+    for key, value in data.items():
+        if isinstance(value, dict):
+            tables.append((key, value))
+        else:
+            scalars.append((key, value))
+
+    for key, value in scalars:
+        if isinstance(value, bool):
+            lines.append(f"{prefix}{key} = {str(value).lower()}")
+        elif isinstance(value, (int, float)):
+            lines.append(f"{prefix}{key} = {value}")
+        elif isinstance(value, str):
+            lines.append(f'{prefix}{key} = "{value}"')
+        else:
+            lines.append(f'{prefix}{key} = "{value}"')
+
+    for key, value in tables:
+        lines.append(f"{prefix}[{key}]")
+        lines.append(_dict_to_toml(value, indent))
+
+    return "\n".join(lines)
 
 
 class KeysConfig(BaseModel):
@@ -26,6 +62,7 @@ class KeysConfig(BaseModel):
     :attr rotate_right: Key to rotate piece clockwise.
     :attr down: Key to move piece down.
     :attr drop: Key to drop piece to bottom.
+    :attr lock: Key to lock piece in place.
     """
 
     pause: str = "p"
@@ -37,6 +74,7 @@ class KeysConfig(BaseModel):
     rotate_right: str = "v"
     down: str = "x"
     drop: str = "c"
+    lock: str = "l"
 
 
 class BoardConfig(BaseModel):
@@ -60,10 +98,13 @@ class GameConfig(BaseModel):
     :attr board: Board dimensions and scale.
     :attr epsilon: Floating point epsilon for rate calculations.
     :attr min_rate: Minimum fall rate.
-    :attr initial_rate: Initial fall rate.
+    :attr initial_rate: Initial fall rate (0 = manual only).
     :attr remove_freq: Cycles between row removal.
     :attr constant: Whether to keep constant fall rate.
-    :attr shadow: Shadow type (only "projection" supported).
+    :attr shadow: Shadow display type (none, projection, or shadow).
+    :attr kick: Enable kick moves for rotations.
+    :attr stack_transparency: Mix stack colors with black for depth.
+    :attr screen_scale: Auto-calculate scale from screen size.
     :attr keys: Keyboard key bindings.
     """
 
@@ -72,10 +113,13 @@ class GameConfig(BaseModel):
     board: BoardConfig = Field(default_factory=BoardConfig)
     epsilon: float = Field(default_factory=lambda: sys.float_info.epsilon * 3)
     min_rate: float = Field(default=0.0, ge=0.0)
-    initial_rate: float = Field(default=1.0, ge=0.0)
+    initial_rate: float = Field(default=0.0, ge=0.0)
     remove_freq: int = Field(default=1, ge=1)
     constant: bool = False
-    shadow: Literal["projection"] = "projection"
+    shadow: Literal["none", "projection", "shadow"] = "projection"
+    kick: bool = False
+    stack_transparency: bool = False
+    screen_scale: bool = True
     keys: KeysConfig = Field(default_factory=KeysConfig)
 
     @field_validator("initial_rate")
@@ -118,7 +162,8 @@ class GameConfig(BaseModel):
             raise ValueError("No config file path specified")
         target = Path(target) / "tetratile" / "tetratile.toml"
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(self.model_dump_json(exclude_none=True))
+        with open(target, "w") as f:
+            f.write(_dict_to_toml(self.model_dump(exclude_none=True)))
 
     @classmethod
     def from_file(cls, path: Path, *, create_default: bool = False) -> GameConfig:
@@ -133,7 +178,8 @@ class GameConfig(BaseModel):
         config_file = path / "tetratile" / "tetratile.toml"
         if config_file.exists():
             try:
-                data = tomllib.loads(config_file.read_text())
+                with open(config_file, "rb") as f:
+                    data = tomllib.load(f)
                 config = cls.model_validate(data)
                 config.config_file = path
             except Exception:
@@ -157,7 +203,10 @@ class GameOptions(TypedDict):
     :attr initial_rate: Initial fall rate.
     :attr remove_freq: Cycles between row removal.
     :attr constant: Whether rate is constant.
-    :attr shadow: Shadow type.
+    :attr shadow: Shadow type (none, projection, shadow).
+    :attr kick: Enable kick moves.
+    :attr stack_transparency: Mix stack colors with black.
+    :attr screen_scale: Auto-calculate scale from screen size.
     :attr keys: Key bindings.
     """
 
@@ -170,6 +219,9 @@ class GameOptions(TypedDict):
     remove_freq: int
     constant: bool
     shadow: str
+    kick: bool
+    stack_transparency: bool
+    screen_scale: bool
     keys: dict[str, str]
 
 
@@ -224,6 +276,9 @@ class Config:
             "remove_freq": config.remove_freq,
             "constant": config.constant,
             "shadow": config.shadow,
+            "kick": config.kick,
+            "stack_transparency": config.stack_transparency,
+            "screen_scale": config.screen_scale,
             "keys": config.keys.model_dump(),
         }
         return opts

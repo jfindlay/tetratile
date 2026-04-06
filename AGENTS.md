@@ -58,7 +58,7 @@ Optional paragraph with more details. Can span multiple lines.
 
 - **Runtime**: pydantic>=2.0
 - **Build**: hatchling, hatch-vcs
-- **Dev**: pytest, ruff, mypy, pyupgrade
+- **Dev**: pytest, pytest-cov, pytest-mock, pyfakefs, ruff, mypy, pyupgrade, tox, tox-uv
 
 ## Build & Test Commands
 
@@ -66,18 +66,36 @@ Optional paragraph with more details. Can span multiple lines.
 # Install in development mode
 uv pip install -e ".[dev]"
 
-# Run tests
+# Run all tests
 uv run pytest tests/
+
+# Run unit tests with coverage
+uv run pytest tests/unit/ --cov=src/tetratile --cov-report=term-missing
+
+# Run integration tests
+uv run pytest tests/integration/
 
 # Run linting
 uv run ruff check src/ tests/
 
+# Run formatting check
+uv run ruff format src/ tests/ --check
+
 # Run type checking
 uv run mypy src/
 
-# Build package
-uv pip install build
-python -m build
+# Run pyupgrade
+uv run pyupgrade --py312-plus src/ tests/
+
+# Run tox (parallel)
+tox -p auto
+
+# Run specific tox environment
+tox -e lint
+tox -e unit
+
+# Build package wheel
+uv build --wheel
 ```
 
 ## Project Structure
@@ -88,11 +106,24 @@ tetratile/
 │   ├── __init__.py      # Main game logic, TetraTile class
 │   ├── __main__.py      # CLI entry point
 │   ├── config.py        # Configuration with Pydantic models
+│   ├── config_ui.py     # Preferences dialog
+│   ├── event_log.py     # Event logging
+│   ├── log_viewer.py    # Log viewer widget
 │   └── py.typed         # PEP 561 marker for type checkers
 ├── tests/
-│   └── unit/
-│       └── test_pysirtet.py  # Unit tests
+│   ├── unit/
+│   │   └── test_tetratile.py  # Unit tests
+│   └── integration/
+│       ├── conftest.py
+│       ├── test_board.py
+│       ├── test_config.py
+│       ├── test_event_logging.py
+│       ├── test_game_flow.py
+│       ├── test_row_removal.py
+│       └── test_srs_rotation.py
 ├── pyproject.toml        # Project configuration
+├── tox.ini              # Tox configuration
+├── .pre-commit-config.yaml  # Pre-commit hooks
 └── README.md            # User documentation
 ```
 
@@ -115,7 +146,7 @@ Tetrominos are defined as:
 ## Configuration
 
 - Pydantic models validate config at runtime
-- TOML file format for persistent config
+- JSON file format for persistent config
 - CLI arguments override config file
 - Defaults in Pydantic Field definitions
 

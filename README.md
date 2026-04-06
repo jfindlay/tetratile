@@ -50,6 +50,7 @@ The default keys for translating the active tetromino align with the four finger
 |`z`|Translate left until stopped by left wall or stack|
 |`/`|Translate right until stopped by right wall or stack|
 |`c`|Translate down until stopped by bottom wall or stack|
+|`l`|Lock piece in place (for manual-only mode)|
 |`p`|(Un)pause|
 
 ## Development
@@ -64,22 +65,40 @@ $ uv run ruff format src/ tests/
 $ uv build
 ```
 
+## Event Log
+
+Game events are logged during play and saved automatically when the game ends. Logs are saved to `~/.local/share/tetratile/logs/` (or `$XDG_DATA_HOME/tetratile/logs/`).
+
+### Viewing Logs
+
+- **File → View Event Log**: Opens a viewer showing all game events
+- **File → Save Event Log**: Manually save the current log
+
+### Log Format
+
+Events are stored as JSON with:
+- `game_id`: Unique game identifier
+- `timestamp_start/end`: ISO timestamps
+- `seed`: Random seed for reproducibility
+- `config`: Game configuration snapshot
+- `events[]`: List of all game events with timestamps
+- `stats`: Final statistics (pieces, rows cleared, etc.)
+
+### Event Types
+
+| Type | Description |
+|------|-------------|
+| `game_start` | Game began |
+| `game_pause` / `game_resume` | Pause state changes |
+| `game_over` | Game ended |
+| `piece_spawn` | New piece appeared |
+| `piece_move` | Piece translated (left/right/down) |
+| `piece_rotate` | Piece rotated (CW/CCW) |
+| `piece_lock` | Piece placed |
+| `row_clear` | Rows removed |
+
 ## TODO
 
-- [ ] Wall kick: If a piece is rotated but near a constraint that would prevent the rotation, try pushing the piece away from the constraint towards the center of the board to enable the rotation.
 - [ ] Project package/module reorganization?
-- [ ] Use structlog
-- [ ] Allow initial rate to be zero
-  - [ ] Asynchronously trigger piece deactivation and row clearing on piece arriving at bottom rather than during game cycle event
-  - [ ] Fundamentally conflicting expectations for game behavior with regular cycles?
 - [ ] Configurably allow monomino, domino, trominoes(, pentominoes, ...?)
 - [ ] AI
-- [ ] Event log: timestamp, event type: control input, piece added, piece fixed, row removed
-- [ ] Responsive UI
-  - [ ] Scale game size to screen size
-  - [ ] Scale widgets to window size
-    - [ ] Boards must have fixed aspect ratios
-- [ ] Shadowing
-  - [ ] Shadow piece on the stack of tetrominoes where it would be placed if dropped down in addition to or replacing the piece projection underneath the main game board
-- [x] Config GUI dialog
-- [x] Read and write to config file

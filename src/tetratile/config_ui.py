@@ -63,40 +63,48 @@ class ConfigUI(tk.Toplevel):
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 12)
         )
 
-        ttk.Label(parent, text="Scale:").grid(row=1, column=0, sticky="w")
+        self._screen_scale_var = tk.BooleanVar()
+        ttk.Checkbutton(
+            parent, text="Auto-scale to screen", variable=self._screen_scale_var, command=self._on_screen_scale_changed
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        ttk.Label(
+            parent, text="Automatically calculate scale from screen size on startup", font=("TkDefaultFont", 8, "italic")
+        ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(0, 8))
+
+        ttk.Label(parent, text="Scale:").grid(row=3, column=0, sticky="w")
         self._scale_var = tk.IntVar()
         self._scale_slider = ttk.Scale(
             parent, from_=8, to=64, orient="horizontal", variable=self._scale_var, command=self._on_modified
         )
-        self._scale_slider.grid(row=1, column=1, sticky="ew")
+        self._scale_slider.grid(row=3, column=1, sticky="ew")
         self._scale_value = ttk.Label(parent, text="32")
-        self._scale_value.grid(row=1, column=2, padx=(8, 0))
+        self._scale_value.grid(row=3, column=2, padx=(8, 0))
         ttk.Label(parent, text="Pixel size of each block", font=("TkDefaultFont", 8, "italic")).grid(
-            row=2, column=0, columnspan=3, sticky="w", pady=(0, 8)
+            row=4, column=0, columnspan=3, sticky="w", pady=(0, 8)
         )
 
-        ttk.Label(parent, text="Width:").grid(row=3, column=0, sticky="w")
+        ttk.Label(parent, text="Width:").grid(row=5, column=0, sticky="w")
         self._width_var = tk.IntVar()
         self._width_slider = ttk.Scale(
             parent, from_=5, to=30, orient="horizontal", variable=self._width_var, command=self._on_modified
         )
-        self._width_slider.grid(row=3, column=1, sticky="ew")
+        self._width_slider.grid(row=5, column=1, sticky="ew")
         self._width_value = ttk.Label(parent, text="10")
-        self._width_value.grid(row=3, column=2, padx=(8, 0))
+        self._width_value.grid(row=5, column=2, padx=(8, 0))
         ttk.Label(parent, text="Number of columns", font=("TkDefaultFont", 8, "italic")).grid(
-            row=4, column=0, columnspan=3, sticky="w", pady=(0, 8)
+            row=6, column=0, columnspan=3, sticky="w", pady=(0, 8)
         )
 
-        ttk.Label(parent, text="Height:").grid(row=5, column=0, sticky="w")
+        ttk.Label(parent, text="Height:").grid(row=7, column=0, sticky="w")
         self._height_var = tk.IntVar()
         self._height_slider = ttk.Scale(
             parent, from_=10, to=50, orient="horizontal", variable=self._height_var, command=self._on_modified
         )
-        self._height_slider.grid(row=5, column=1, sticky="ew")
+        self._height_slider.grid(row=7, column=1, sticky="ew")
         self._height_value = ttk.Label(parent, text="22")
-        self._height_value.grid(row=5, column=2, padx=(8, 0))
+        self._height_value.grid(row=7, column=2, padx=(8, 0))
         ttk.Label(parent, text="Number of rows", font=("TkDefaultFont", 8, "italic")).grid(
-            row=6, column=0, columnspan=3, sticky="w"
+            row=8, column=0, columnspan=3, sticky="w"
         )
 
         parent.columnconfigure(1, weight=1)
@@ -110,12 +118,12 @@ class ConfigUI(tk.Toplevel):
         ttk.Label(parent, text="Initial Rate:").grid(row=1, column=0, sticky="w")
         self._initial_rate_var = tk.DoubleVar()
         self._initial_rate_slider = ttk.Scale(
-            parent, from_=0.1, to=10.0, orient="horizontal", variable=self._initial_rate_var, command=self._on_modified
+            parent, from_=0.0, to=10.0, orient="horizontal", variable=self._initial_rate_var, command=self._on_modified
         )
         self._initial_rate_slider.grid(row=1, column=1, sticky="ew")
-        self._initial_rate_value = ttk.Label(parent, text="1.0")
+        self._initial_rate_value = ttk.Label(parent, text="0.0")
         self._initial_rate_value.grid(row=1, column=2, padx=(8, 0))
-        ttk.Label(parent, text="Starting fall rate (blocks/second)", font=("TkDefaultFont", 8, "italic")).grid(
+        ttk.Label(parent, text="Starting fall rate (blocks/second), 0 = manual only", font=("TkDefaultFont", 8, "italic")).grid(
             row=2, column=0, columnspan=3, sticky="w", pady=(0, 8)
         )
 
@@ -148,7 +156,42 @@ class ConfigUI(tk.Toplevel):
         self._remove_freq_value = ttk.Label(parent, text="1")
         self._remove_freq_value.grid(row=7, column=2, padx=(8, 0))
         ttk.Label(parent, text="Full rows to complete before removal check", font=("TkDefaultFont", 8, "italic")).grid(
-            row=8, column=0, columnspan=3, sticky="w"
+            row=8, column=0, columnspan=3, sticky="w", pady=(0, 12)
+        )
+
+        ttk.Separator(parent, orient="horizontal").grid(row=9, column=0, columnspan=3, sticky="ew", pady=(0, 12))
+
+        ttk.Label(parent, text="Shadow Display:", font=("TkDefaultFont", 10, "bold")).grid(
+            row=10, column=0, columnspan=3, sticky="w", pady=(0, 8)
+        )
+
+        self._shadow_var = tk.StringVar(value="projection")
+        ttk.Radiobutton(parent, text="None", variable=self._shadow_var, value="none", command=self._on_modified).grid(
+            row=11, column=0, columnspan=3, sticky="w", padx=(0, 20)
+        )
+        ttk.Radiobutton(
+            parent, text="Projection (below board)", variable=self._shadow_var, value="projection", command=self._on_modified
+        ).grid(row=12, column=0, columnspan=3, sticky="w", padx=(0, 20))
+        ttk.Radiobutton(
+            parent, text="Shadow (overlay on stack)", variable=self._shadow_var, value="shadow", command=self._on_modified
+        ).grid(row=13, column=0, columnspan=3, sticky="w", pady=(0, 12))
+
+        ttk.Separator(parent, orient="horizontal").grid(row=14, column=0, columnspan=3, sticky="ew", pady=(0, 12))
+
+        self._kick_var = tk.BooleanVar()
+        ttk.Checkbutton(parent, text="Enable Kick Moves", variable=self._kick_var, command=self._on_modified).grid(
+            row=15, column=0, columnspan=3, sticky="w", pady=(0, 4)
+        )
+        ttk.Label(parent, text="Try offset positions when rotation fails", font=("TkDefaultFont", 8, "italic")).grid(
+            row=16, column=0, columnspan=3, sticky="w", pady=(0, 8)
+        )
+
+        self._stack_transparency_var = tk.BooleanVar()
+        ttk.Checkbutton(
+            parent, text="Stack Transparency", variable=self._stack_transparency_var, command=self._on_modified
+        ).grid(row=17, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        ttk.Label(parent, text="Mix placed pieces with black for depth (~15%%)", font=("TkDefaultFont", 8, "italic")).grid(
+            row=18, column=0, columnspan=3, sticky="w"
         )
 
         parent.columnconfigure(1, weight=1)
@@ -171,6 +214,7 @@ class ConfigUI(tk.Toplevel):
             ("rotate_right", "Rotate Right"),
             ("down", "Soft Drop"),
             ("drop", "Hard Drop"),
+            ("lock", "Lock Piece"),
         ]
 
         for i, (action, label) in enumerate(key_actions, start=1):
@@ -216,6 +260,7 @@ class ConfigUI(tk.Toplevel):
 
     def _populate_widgets(self) -> None:
         """Populate widgets with current config values."""
+        self._screen_scale_var.set(self._config.screen_scale)
         self._scale_var.set(self._config.board.scale)
         self._width_var.set(self._config.board.width)
         self._height_var.set(self._config.board.height)
@@ -223,6 +268,9 @@ class ConfigUI(tk.Toplevel):
         self._min_rate_var.set(self._config.min_rate)
         self._constant_var.set(self._config.constant)
         self._remove_freq_var.set(self._config.remove_freq)
+        self._shadow_var.set(self._config.shadow)
+        self._kick_var.set(self._config.kick)
+        self._stack_transparency_var.set(self._config.stack_transparency)
 
         self._update_scale_value()
         self._update_width_value()
@@ -268,8 +316,17 @@ class ConfigUI(tk.Toplevel):
         self._update_min_rate_value()
         self._update_remove_freq_value()
 
+    def _on_screen_scale_changed(self) -> None:
+        """Handle screen scale checkbox change."""
+        self._modified = True
+        enabled = self._screen_scale_var.get()
+        self._scale_slider.config(state="normal" if enabled else "disabled")
+        if enabled:
+            self._scale_slider.config(state="disabled")
+
     def _gather_config(self) -> GameConfig:
         """Gather values from widgets into a GameConfig."""
+        self._config.screen_scale = self._screen_scale_var.get()
         self._config.board.scale = self._scale_var.get()
         self._config.board.width = self._width_var.get()
         self._config.board.height = self._height_var.get()
@@ -277,6 +334,9 @@ class ConfigUI(tk.Toplevel):
         self._config.min_rate = self._min_rate_var.get()
         self._config.constant = self._constant_var.get()
         self._config.remove_freq = self._remove_freq_var.get()
+        self._config.shadow = self._shadow_var.get()  # type: ignore[assignment]
+        self._config.kick = self._kick_var.get()
+        self._config.stack_transparency = self._stack_transparency_var.get()
 
         for action, var in self._key_vars.items():
             setattr(self._config.keys, action, var.get())
@@ -286,21 +346,29 @@ class ConfigUI(tk.Toplevel):
     def _on_apply(self) -> None:
         """Apply changes and continue editing."""
         self._gather_config()
+        self._original.screen_scale = self._config.screen_scale
         self._original.board = self._config.board
         self._original.initial_rate = self._config.initial_rate
         self._original.min_rate = self._config.min_rate
         self._original.constant = self._config.constant
         self._original.remove_freq = self._config.remove_freq
+        self._original.shadow = self._config.shadow
+        self._original.kick = self._config.kick
+        self._original.stack_transparency = self._config.stack_transparency
         self._original.keys = self._config.keys
 
     def _on_save_close(self) -> None:
         """Save to file, apply, and close."""
         self._gather_config()
+        self._original.screen_scale = self._config.screen_scale
         self._original.board = self._config.board
         self._original.initial_rate = self._config.initial_rate
         self._original.min_rate = self._config.min_rate
         self._original.constant = self._config.constant
         self._original.remove_freq = self._config.remove_freq
+        self._original.shadow = self._config.shadow
+        self._original.kick = self._config.kick
+        self._original.stack_transparency = self._config.stack_transparency
         self._original.keys = self._config.keys
         self._original.write_to_file()
         self.grab_release()

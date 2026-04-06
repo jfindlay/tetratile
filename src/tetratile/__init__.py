@@ -20,7 +20,8 @@ import typing
 from dataclasses import dataclass, field
 from decimal import Decimal as D
 
-from .config import GameConfig
+from .config import BoardConfig, GameConfig
+from .event_log import EventLogger, EventType
 
 _VERSION: str = importlib.metadata.version("tetratile")
 
@@ -84,8 +85,8 @@ class GameState(enum.StrEnum):
     over = "game over"
 
 
-class EventType(enum.IntEnum):
-    """Available asynchronous events.
+class GameEvent(enum.IntEnum):
+    """Available asynchronous game events.
 
     :attr iterate: Event to iterate the game loop.
     :attr remove: Event to remove full rows.
@@ -107,6 +108,27 @@ class Colors:
     normal: str = ""
     light: str = ""
     dark: str = ""
+
+
+def mix_with_black(color: str, factor: float = 0.5) -> str:
+    """Blend a hex color with black.
+
+    :param color: Hex color string (e.g., "#RRGGBB").
+    :param factor: Blend factor from 0.0 (original) to 1.0 (black).
+    :returns: New hex color string.
+    """
+    if not color or len(color) != 7:
+        return color
+    try:
+        r = int(color[1:3], 16)
+        g = int(color[3:5], 16)
+        b = int(color[5:7], 16)
+    except ValueError:
+        return color
+    r = int(r * (1 - factor))
+    g = int(g * (1 - factor))
+    b = int(b * (1 - factor))
+    return f"#{r:02x}{g:02x}{b:02x}"
 
 
 @dataclass
@@ -423,7 +445,7 @@ class TetrominoType(enum.Enum):
     )
     J = TetrominoData(
         name="J",
-        coords=((D(0), D(1)), (D(0), D(0)), (D(0), D(-1)), (D(-1), D(-1))),
+        coords=((D(0), D(1)), (D(0), D(0)), (D(0), D(-1)), (D(1), D(-1))),
         normal="#DAAA00",
         light="#FCC600",
         dark="#806200",
@@ -436,6 +458,71 @@ class TetrominoType(enum.Enum):
         :returns: A new Tetromino instance with this type's data.
         """
         return Tetromino(self.value)
+
+
+SRS_KICK_JLSTZ: dict[tuple[int, int], list[tuple[int, int]]] = {
+    (0, 0): [],
+    (0, 1): [(0, 0), (-1, 0), (-1, +1), (0, -2), (-1, -2)],
+    (0, 3): [(0, 0), (+1, 0), (+1, +1), (0, -2), (+1, -2)],
+    (1, 0): [(0, 0), (+1, 0), (+1, -1), (0, +2), (+1, +2)],
+    (1, 1): [],
+    (1, 2): [(0, 0), (+1, 0), (+1, -1), (0, +2), (+1, +2)],
+    (1, 3): [(0, 0), (-1, 0), (-1, +1), (0, -2), (-1, -2)],
+    (2, 0): [(0, 0), (+1, 0), (+1, +1), (0, -2), (+1, -2)],
+    (2, 1): [(0, 0), (-1, 0), (-1, -1), (0, +2), (-1, +2)],
+    (2, 2): [],
+    (2, 3): [(0, 0), (-1, 0), (-1, +1), (0, -2), (-1, -2)],
+    (3, 0): [(0, 0), (-1, 0), (-1, -1), (0, +2), (-1, +2)],
+    (3, 1): [(0, 0), (+1, 0), (+1, -1), (0, +2), (+1, +2)],
+    (3, 2): [(0, 0), (+1, 0), (+1, +1), (0, -2), (+1, -2)],
+    (3, 3): [],
+}
+
+SRS_KICK_I: dict[tuple[int, int], list[tuple[int, int]]] = {
+    (0, 0): [],
+    (0, 1): [(0, 0), (-2, 0), (+1, 0), (-2, -1), (+1, +2)],
+    (0, 3): [(0, 0), (-1, 0), (+2, 0), (-1, +2), (+2, -1)],
+    (1, 0): [(0, 0), (+2, 0), (-1, 0), (+2, +1), (-1, -2)],
+    (1, 1): [],
+    (1, 2): [(0, 0), (-1, 0), (+2, 0), (-1, +2), (+2, -1)],
+    (1, 3): [(0, 0), (+2, 0), (-1, 0), (+2, +1), (-1, -2)],
+    (2, 0): [(0, 0), (+1, 0), (-2, 0), (+1, -2), (-2, +1)],
+    (2, 1): [(0, 0), (+2, 0), (-1, 0), (+2, +1), (-1, -2)],
+    (2, 2): [],
+    (2, 3): [(0, 0), (-2, 0), (+1, 0), (-2, -1), (+1, +2)],
+    (3, 0): [(0, 0), (+1, 0), (-2, 0), (+1, -2), (-2, +1)],
+    (3, 1): [(0, 0), (-1, 0), (+2, 0), (-1, +2), (+2, -1)],
+    (3, 2): [(0, 0), (+2, 0), (-1, 0), (+2, +1), (-1, -2)],
+    (3, 3): [],
+}
+
+SRS_KICK_O: dict[tuple[int, int], list[tuple[int, int]]] = {
+    (0, 0): [],
+    (0, 1): [],
+    (0, 3): [],
+    (1, 0): [],
+    (1, 1): [],
+    (1, 2): [],
+    (1, 3): [],
+    (2, 0): [],
+    (2, 1): [],
+    (2, 2): [],
+    (2, 3): [],
+    (3, 0): [],
+    (3, 1): [],
+    (3, 2): [],
+    (3, 3): [],
+}
+
+SRS_CENTERS: dict[str, tuple[D, D]] = {
+    "Z": (D(0), D("-0.5")),
+    "S": (D(0), D("-0.5")),
+    "l": (D(0), D(0)),
+    "T": (D(0), D("-0.5")),
+    "o": (D(0), D(0)),
+    "L": (D("-0.5"), D("-0.5")),
+    "J": (D("-0.5"), D("-0.5")),
+}
 
 
 def used_keys() -> list[str]:
@@ -451,10 +538,12 @@ class Tetromino(Polyomino):
 
     :attr dim: Always Dimension.D2 for tetrominoes.
     :attr name: Single-letter identifier.
+    :attr rotation_state: SRS rotation state (0-3).
     """
 
     dim: Dimension = Dimension.D2
     name: str = ""
+    rotation_state: int = 0
 
     def __init__(self, data: TetrominoData | None = None) -> None:
         """Initialize a tetromino.
@@ -463,17 +552,79 @@ class Tetromino(Polyomino):
         """
         self.coords: list[list[int]] = []
         self.colors: Colors = Colors("", "", "")
+        self.rotation_state = 0
         if data is not None:
             self.name = data.name
             self.colors = Colors(data.normal, data.light, data.dark)
-            coords = data.coords
-            if any(v[0] % 1 or v[1] % 1 for v in coords):
-                self.coords = [[int(v[0] - D("0.5")), int(v[1] - D("0.5"))] for v in coords]
-                self.o = [D("-0.5"), D("-0.5")]
+            if any(v[0] % 1 or v[1] % 1 for v in data.coords):
+                self.coords = [[int(v[0] - D("0.5")), int(v[1] - D("0.5"))] for v in data.coords]
             else:
-                self.coords = [[int(v[0]), int(v[1])] for v in coords]
-                self.o = [D(0), D(0)]
+                self.coords = [[int(v[0]), int(v[1])] for v in data.coords]
+            self.o = [SRS_CENTERS.get(data.name, (D(0), D(0)))[0], SRS_CENTERS.get(data.name, (D(0), D(0)))[1]]
         self.dim = Dimension.D2
+
+    def _get_kick_table(self) -> dict[tuple[int, int], list[tuple[int, int]]]:
+        """Get the SRS kick table for this tetromino.
+
+        :returns: Kick table for JLSTZ, I, or O piece.
+        """
+        if self.name == "o":
+            return SRS_KICK_O
+        elif self.name == "l":
+            return SRS_KICK_I
+        return SRS_KICK_JLSTZ
+
+    def _rotate_coords(self, direction: int) -> list[list[int]]:
+        """Calculate rotated coordinates about the origin.
+
+        :param direction: Rotation direction (+1=CW, -1=CCW in screen coords).
+        :returns: New coordinates after rotation.
+        """
+        coords = [[0 for _ in range(self.dim)] for _ in self.coords]
+        for i, _ in enumerate(self.coords):
+            coords[i][0] = int(direction * (self.coords[i][1] - self.o[1]) + self.o[0])
+            coords[i][1] = int(-direction * (self.coords[i][0] - self.o[0]) + self.o[1])
+        return coords
+
+    def srs_rotate(self, direction: int, grid: Grid) -> bool:
+        """Rotate using SRS with full kick tables.
+
+        :param direction: Rotation direction (+1=CW, -1=CCW in screen coords).
+        :param grid: The grid to rotate within.
+        :returns: True if rotation was successful.
+        """
+        old_state = self.rotation_state
+        new_state = (old_state + direction) % 4
+        kick_table = self._get_kick_table()
+        kicks = kick_table.get((old_state, new_state), [(0, 0)])
+
+        for kick_x, kick_y in kicks:
+            coords = self._rotate_coords(direction)
+            translated = [[c[0] + kick_x, c[1] + kick_y] for c in coords]
+            if grid.check(translated):
+                self.coords = translated
+                self.o = [self.o[0] + D(kick_x), self.o[1] + D(kick_y)]
+                self.rotation_state = new_state
+                return True
+        if kicks:
+            for ceiling_kick_y in range(-1, -3, -1):
+                coords = self._rotate_coords(direction)
+                translated = [[c[0], c[1] + ceiling_kick_y] for c in coords]
+                if grid.check(translated):
+                    self.coords = translated
+                    self.o = [self.o[0], self.o[1] + D(ceiling_kick_y)]
+                    self.rotation_state = new_state
+                    return True
+        return False
+
+    def rotate(self, r: Transformation, grid: Grid) -> bool:
+        """Rotate using SRS with full kick tables.
+
+        :param r: Rotation transformation with multiple indicating direction.
+        :param grid: The grid to rotate within.
+        :returns: True if rotation was successful.
+        """
+        return self.srs_rotate(r.multiple, grid)
 
 
 tetrominoes: tuple[Tetromino, ...] = tuple(t.tetromino for t in TetrominoType)
@@ -695,12 +846,13 @@ class Board(tk.Canvas):
             width=self.border_width,
         )
 
-    def update(self, piece: Polyomino, clear: bool = False, is_active: bool = False) -> None:
+    def update(self, piece: Polyomino, clear: bool = False, is_active: bool = False, transparency: float = 0.0) -> None:
         """Place or clear a piece on the board.
 
         :param piece: The piece to place or clear.
         :param clear: If True, remove the piece. Otherwise place it.
         :param is_active: Whether the piece is active (falling).
+        :param transparency: Transparency factor (0.0-1.0) to mix with black.
         """
         for v in piece.coords:
             u = [v[0], 0] if self.is_projection else v
@@ -715,6 +867,12 @@ class Board(tk.Canvas):
             else:
                 if not square.id:
                     colors = piece.colors
+                    if transparency > 0:
+                        colors = Colors(
+                            mix_with_black(colors.normal, transparency),
+                            mix_with_black(colors.light, transparency),
+                            mix_with_black(colors.dark, transparency),
+                        )
                     square.type = piece.name
                     square.id = self._draw_square(u, colors)
                     square.colors = colors
@@ -774,7 +932,7 @@ class Board(tk.Canvas):
         return full_count, rows
 
     def remove_full_rows(self) -> int:
-        """Remove full rows and move partial rows down.
+        """Remove full rows.
 
         :returns: Number of rows removed.
         """
@@ -782,10 +940,6 @@ class Board(tk.Canvas):
         for row in rows:
             if row.full:
                 self.update(row, clear=True)
-            elif row.full_below_count:
-                self.update(row, clear=True)
-                row.translate([0, -row.full_below_count], self._game_grid)
-                self.update(row)
         return full_count
 
     def clear(self) -> None:
@@ -851,27 +1005,40 @@ class TetraTile(tk.Frame):
         self.state_name = tk.StringVar()
         self.set_state(GameState.running)
 
+        self.event_logger = EventLogger()
+        self.event_logger.start(config)
+
+        def _sync_logger_time() -> None:
+            elapsed_seconds = self.time_elapsed.get(as_seconds=True)
+            elapsed_ms = int((elapsed_seconds or 0) * 1000)
+            self.event_logger.update_time(elapsed_ms, 0)
+
+        self._sync_logger_time = _sync_logger_time
+
         super().__init__(master)
         if master is None:
             raise TypeError("master cannot be None")
         self.master: tk.Tk = master
+        self.projection_board: Board | None = None
+        self._shadow_id: int | None = None
+        self._shadow_coords: list[list[int]] = []
         self._create_menubar()
         self.pack()
         self.create_widgets()
         self.setup_events()
         self.add_piece()
-        self.iterate_id = self._schedule(EventType.iterate)
+        self.iterate_id = self._schedule(GameEvent.iterate)
 
-    def _schedule(self, event_type: EventType) -> str:
+    def _schedule(self, game_event: GameEvent) -> str:
         """Schedule an asynchronous event.
 
-        :param event_type: The type of event to schedule.
+        :param game_event: The type of event to schedule.
         :returns: Tkinter after callback ID.
         """
-        if event_type == EventType.iterate:
+        if game_event == GameEvent.iterate:
             action = self.iterate
             rate = self.rate.get(raw=True)
-        elif event_type == EventType.remove:
+        elif game_event == GameEvent.remove:
             action = self.remove_full_rows
             rate = self.rate.get(raw=True) * self._config.remove_freq
 
@@ -904,36 +1071,114 @@ class TetraTile(tk.Frame):
         :param clear: If True, remove the piece. Otherwise place it.
         :param is_active: Whether the piece is active (falling).
         """
-        if self.piece is not None:
-            self.board.update(self.piece, clear=clear, is_active=is_active)
-            if self._config.shadow == "projection":
-                self.projection_board.update(self.piece, clear=clear, is_active=is_active)
+        if self.piece is None:
+            return
+
+        stack_transparency = 0.15 if self._config.stack_transparency and not is_active else 0.0
+        self.board.update(self.piece, clear=clear, is_active=is_active, transparency=stack_transparency)
+
+        match self._config.shadow:
+            case "projection":
+                if self.projection_board is not None:
+                    self.projection_board.update(self.piece, clear=clear, is_active=is_active)
+            case "shadow":
+                self._update_shadow()
+
+    def _update_shadow(self) -> None:
+        """Update the shadow piece on the main board showing where the piece will land."""
+        if self.piece is None or self.state != GameState.running:
+            return
+
+        if self._shadow_id is not None:
+            self.board.delete(self._shadow_id)
+            self._shadow_id = None
+
+        for coord in self._shadow_coords:
+            self.board.delete(f"shadow_{coord[0]}_{coord[1]}")
+        self._shadow_coords = []
+
+        piece_copy = copy.deepcopy(self.piece)
+        drop_distance = 0
+        while piece_copy.translate([0, -1], self.board._game_grid):
+            drop_distance -= 1
+
+        if drop_distance == 0:
+            return
+
+        self._shadow_coords = [[c[0], c[1] + drop_distance] for c in self.piece.coords]
+        for coord in self._shadow_coords:
+            u = self.board._transform_coord(coord)
+            scale = self._config.board.scale
+            x1 = scale * u[0] + self.board.border_width
+            y1 = scale * u[1] + self.board.border_width
+            x2 = x1 + scale
+            y2 = y1 + scale // self.board.aspect_proportion
+            self.board.create_rectangle(
+                x1,
+                y1,
+                x2,
+                y2,
+                fill=mix_with_black(self.piece.colors.normal, 0.5),
+                outline=mix_with_black(self.piece.colors.dark, 0.5),
+                width=self.board.border_width,
+                tags=(f"shadow_{coord[0]}_{coord[1]}",),
+            )
 
     def create_widgets(self) -> None:
         """Pack in game widgets."""
-        # Game frame
         self.game = tk.Frame(self)
         self.game.pack(side="left")
 
+        if self._config.screen_scale:
+            screen_w = self.master.winfo_screenwidth()
+            screen_h = self.master.winfo_screenheight()
+            margin = 0.8
+            max_scale_w = int((screen_w * margin) / self._config.board.width)
+            max_scale_h = int((screen_h * margin) / (self._config.board.height + 1))
+            computed_scale = min(max_scale_w, max_scale_h)
+        else:
+            computed_scale = self._config.board.scale
+
+        board_config = BoardConfig(
+            scale=computed_scale,
+            width=self._config.board.width,
+            height=self._config.board.height,
+        )
+        scaled_config = GameConfig(
+            debug=self._config.debug,
+            board=board_config,
+            epsilon=self._config.epsilon,
+            min_rate=self._config.min_rate,
+            initial_rate=self._config.initial_rate,
+            remove_freq=self._config.remove_freq,
+            constant=self._config.constant,
+            shadow=self._config.shadow,
+            kick=self._config.kick,
+            stack_transparency=self._config.stack_transparency,
+            screen_scale=self._config.screen_scale,
+            keys=self._config.keys,
+        )
+
         self.board = Board(
-            self._config,
+            scaled_config,
             self.game,
-            self._config.board.width,
-            self._config.board.height,
+            scaled_config.board.width,
+            scaled_config.board.height,
         )
         self.board.pack(side="top")
 
         if self._config.shadow == "projection":
-            self.projection_board = Board(self._config, self.game, self._config.board.width, 1, is_projection=True)
+            self.projection_board = Board(scaled_config, self.game, scaled_config.board.width, 1, is_projection=True)
             self.projection_board.pack(side="top")
+        else:
+            self.projection_board = None
 
-        # Marquee frame
         self.marquee = tk.Frame(self)
-        self.marquee.pack(side="right", padx=self._config.board.scale, pady=self._config.board.scale)
+        self.marquee.pack(side="right", padx=computed_scale, pady=computed_scale)
 
         self.preview_frame = tk.LabelFrame(self.marquee, text="preview")
         self.preview_frame.pack(side="top")
-        self.preview_board = Board(self._config, self.preview_frame, self.pdeg, self.pdeg)
+        self.preview_board = Board(scaled_config, self.preview_frame, self.pdeg, self.pdeg)
         self.preview_board.pack(side="top")
 
         self.rate_frame = tk.LabelFrame(self.marquee, text="fall rate")
@@ -1018,7 +1263,23 @@ class TetraTile(tk.Frame):
         menubar.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="Preferences...", command=lambda: ConfigUI(self.master, self._config))
         file_menu.add_separator()
+        file_menu.add_command(label="View Event Log", command=self._show_log_viewer)
+        file_menu.add_command(label="Save Event Log", command=self._save_log)
+        file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.master.quit)
+
+    def _show_log_viewer(self) -> None:
+        """Show the event log viewer window."""
+        from .log_viewer import LogViewer
+
+        LogViewer(self.master, self.event_logger)
+
+    def _save_log(self) -> None:
+        """Save the event log to a file."""
+        from tkinter import messagebox
+
+        path = self.event_logger.save()
+        messagebox.showinfo("Log Saved", f"Event log saved to:\n{path}")
 
     def setup_events(self) -> None:
         """Respond to inputs and other game conditions.
@@ -1036,14 +1297,22 @@ class TetraTile(tk.Frame):
         if self.state == GameState.running:
             self.after_cancel(self.iterate_id)
             self.time_elapsed.stop()
-            for board in (self.board, self.preview_board, self.projection_board):
-                board.add_pause_cover()
+            self.board.add_pause_cover()
+            self.preview_board.add_pause_cover()
+            if self.projection_board is not None:
+                self.projection_board.add_pause_cover()
+            self._sync_logger_time()
+            self.event_logger.log(EventType.game_pause)
             self.set_state(GameState.paused)
         elif self.state == GameState.paused:
-            self.iterate_id = self._schedule(EventType.iterate)
+            self.iterate_id = self._schedule(GameEvent.iterate)
             self.time_elapsed.start()
-            for board in (self.board, self.preview_board, self.projection_board):
-                board.remove_pause_cover()
+            self.board.remove_pause_cover()
+            self.preview_board.remove_pause_cover()
+            if self.projection_board is not None:
+                self.projection_board.remove_pause_cover()
+            self._sync_logger_time()
+            self.event_logger.log(EventType.game_resume)
             self.set_state(GameState.running)
 
     def left(self, event: tk.Event) -> None:
@@ -1113,10 +1382,36 @@ class TetraTile(tk.Frame):
             while self.move_piece(Transformation(EigenTransformation.vertical, 1)):
                 pass
 
+    def lock(self, event: tk.Event) -> None:
+        """Lock the current piece in place without dropping.
+
+        :param event: Tkinter event (unused).
+        """
+        if self.state == GameState.running and self.piece is not None:
+            piece_type = self.piece.name
+            self._update_piece_on_board(clear=True)
+            self._update_piece_on_board(is_active=False)
+            match self._config.shadow:
+                case "shadow":
+                    if hasattr(self, "_shadow_coords"):
+                        for coord in getattr(self, "_shadow_coords", []):
+                            self.board.delete(f"shadow_{coord[0]}_{coord[1]}")
+                        self._shadow_coords = []
+            self._sync_logger_time()
+            self.event_logger.log(EventType.piece_lock, piece_type=piece_type)
+            if self.board.select_full_rows():
+                self._schedule(GameEvent.remove)
+            self.add_piece()
+
     def restart(self) -> None:
         """Restart the game."""
         self.board.clear()
-        self.projection_board.clear()
+        if self.projection_board is not None:
+            self.projection_board.clear()
+        if hasattr(self, "_shadow_coords"):
+            for coord in getattr(self, "_shadow_coords", []):
+                self.board.delete(f"shadow_{coord[0]}_{coord[1]}")
+            self._shadow_coords = []
         self.piece = None
 
         for var in self.removed_by_count:
@@ -1133,7 +1428,7 @@ class TetraTile(tk.Frame):
 
         self.restart_button.destroy()
         self.add_piece()
-        self.iterate_id = self._schedule(EventType.iterate)
+        self.iterate_id = self._schedule(GameEvent.iterate)
 
     def iterate(self) -> None:
         """Process one game cycle.
@@ -1147,13 +1442,13 @@ class TetraTile(tk.Frame):
             self._update_piece_on_board(clear=True)
             self._update_piece_on_board(is_active=False)
             if self.board.select_full_rows():
-                self._schedule(EventType.remove)
+                self._schedule(GameEvent.remove)
             self.add_piece()
         if self._config.debug:
             self.board._game_grid.print()
         if self.state == GameState.running:
             self._update_rates()
-            self.iterate_id = self._schedule(EventType.iterate)
+            self.iterate_id = self._schedule(GameEvent.iterate)
         elif self.state == GameState.over:
             self.restart_button = tk.Button(self.marquee, text="restart", command=self.restart)
             self.restart_button.pack(side="top")
@@ -1189,12 +1484,25 @@ class TetraTile(tk.Frame):
             ],
             self.board._game_grid,
         ):
-            if self._config.shadow == "projection":
-                self.projection_board.clear()
+            match self._config.shadow:
+                case "projection":
+                    if self.projection_board is not None:
+                        self.projection_board.clear()
+                case "shadow":
+                    if hasattr(self, "_shadow_coords"):
+                        for coord in getattr(self, "_shadow_coords", []):
+                            self.board.delete(f"shadow_{coord[0]}_{coord[1]}")
+                        self._shadow_coords = []
             self.piece = piece
+            self._sync_logger_time()
+            self.event_logger.log(EventType.piece_spawn, piece_type=piece.name)
             self._update_piece_on_board()
         else:
             self.piece = piece
+            self._sync_logger_time()
+            self.event_logger.log(EventType.game_over, reason="cannot spawn")
+            self.event_logger.stop(self._get_stats())
+            self.event_logger.save()
             self.set_state(GameState.over)
 
     def move_piece(self, transformation: Transformation) -> bool:
@@ -1205,14 +1513,47 @@ class TetraTile(tk.Frame):
         """
         assert self.piece is not None
         self._update_piece_on_board(clear=True)
-        result = self.piece.transform(transformation, self.board._game_grid)
+
+        if transformation.eigentransformation == EigenTransformation.rotation:
+            piece = self.piece
+            assert isinstance(piece, Tetromino)
+            result = piece.srs_rotate(transformation.multiple, self.board._game_grid)
+        else:
+            result = self.piece.transform(transformation, self.board._game_grid)
+
         self._update_piece_on_board()
+        if result and self.piece is not None:
+            self._sync_logger_time()
+            match transformation.eigentransformation:
+                case EigenTransformation.rotation:
+                    direction_str = "CW" if transformation.multiple > 0 else "CCW"
+                    self.event_logger.log(EventType.piece_rotate, piece_type=self.piece.name, direction=direction_str)
+                case EigenTransformation.horizontal:
+                    dir_str = "right" if transformation.multiple > 0 else "left"
+                    self.event_logger.log(EventType.piece_move, piece_type=self.piece.name, direction=dir_str)
+                case EigenTransformation.vertical:
+                    self.event_logger.log(EventType.piece_move, piece_type=self.piece.name, direction="down")
         return result
 
     def remove_full_rows(self) -> None:
         """Remove full rows and move partial rows down into the vacancies."""
         full_count = self.board.remove_full_rows()
         self._update_removed(full_count)
+        if full_count > 0:
+            self._sync_logger_time()
+            self.event_logger.log(EventType.row_clear, count=full_count)
+
+    def _get_stats(self) -> dict[str, int | list[int] | dict[str, int]]:
+        """Get current game statistics.
+
+        :returns: Dictionary of game statistics.
+        """
+        return {
+            "pieces": self.used["total"].get(),
+            "rows_cleared": self.removed_total.get(),
+            "rows_by_count": [var.get() for var in self.removed_by_count],
+            "pieces_by_type": {name: var.get() for name, var in self.used.items() if name != "total"},
+        }
 
 
 class Preferences(tk.Frame):
