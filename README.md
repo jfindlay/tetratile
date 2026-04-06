@@ -28,11 +28,13 @@ The fall rate scales logarithmically with the number of completed rows removed. 
 ## Configuration
 
 The game can be configured by (in order of increasing precedence):
-- Defaults defined in the source code at `tetratile.tetratile.Config().opts`
-- The config file: `tetratile.conf`
+- Defaults defined in `tetratile.config.GameConfig`
+- The config file: `~/.config/tetratile/tetratile.toml` (or `$XDG_CONFIG_HOME/tetratile/tetratile.toml`)
 - Command line parameters
 
 Not all configs available to the config file are available on the command line.
+
+Configuration can also be modified at runtime via **File → Preferences** in the game.
 
 ### Default keys
 
@@ -64,21 +66,20 @@ $ uv build
 
 ## TODO
 
-- If a piece is rotated but near a constraint that would prevent the rotation, like near the board top, sides, bottom, or near the stack: try pushing the piece away from the constraint towards the center of the board to enable the rotation.
-- Project package/module reorganization?
-- Use structlog
-- Allow initial rate to be zero
-  - Asynchronously trigger piece deactivation and row clearing on piece arriving at bottom rather than during game cycle event
-  - Fundamentally conflicting expectations for game behavior with regular cycles?
-- Configurably allow monomino, domino, trominoes(, pentominoes, ...?)
-- AI
-- Event log: timestamp, event type: control input, piece added, piece fixed, row removed
-- UI
-  - Scale game size to screen size
-  - Scale widgets to window size
-    - Boards must have fixed aspect ratios
-  - Shadowing
-    - Shadow piece on the stack of tetrominoes where it would be placed if dropped down in addition to or replacing the piece projection underneath the main game board
-- Config
-  - GUI dialog
-  - Read and write to config file
+- [ ] Wall kick: If a piece is rotated but near a constraint that would prevent the rotation, try pushing the piece away from the constraint towards the center of the board to enable the rotation.
+- [ ] Project package/module reorganization?
+- [ ] Use structlog
+- [ ] Allow initial rate to be zero
+  - [ ] Asynchronously trigger piece deactivation and row clearing on piece arriving at bottom rather than during game cycle event
+  - [ ] Fundamentally conflicting expectations for game behavior with regular cycles?
+- [ ] Configurably allow monomino, domino, trominoes(, pentominoes, ...?)
+- [ ] AI
+- [ ] Event log: timestamp, event type: control input, piece added, piece fixed, row removed
+- [ ] Responsive UI
+  - [ ] Scale game size to screen size
+  - [ ] Scale widgets to window size
+    - [ ] Boards must have fixed aspect ratios
+- [ ] Shadowing
+  - [ ] Shadow piece on the stack of tetrominoes where it would be placed if dropped down in addition to or replacing the piece projection underneath the main game board
+- [x] Config GUI dialog
+- [x] Read and write to config file
