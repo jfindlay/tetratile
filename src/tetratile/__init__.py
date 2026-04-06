@@ -358,15 +358,13 @@ class TetrominoData:
     :attr normal: Primary color hex code.
     :attr light: Light color hex code.
     :attr dark: Dark color hex code.
-    :attr o: Proper origin coordinates.
     """
 
     name: str
-    coords: tuple[tuple[int, int], ...]
+    coords: tuple[tuple[D, D], ...]
     normal: str
     light: str
     dark: str
-    o: tuple[D, D]
 
 
 class TetrominoType(enum.Enum):
@@ -381,13 +379,55 @@ class TetrominoType(enum.Enum):
     :attr J: J-shaped tetromino.
     """
 
-    Z = TetrominoData("Z", ((-2, 0), (-1, 0), (-1, -1), (0, -1)), "#CC6666", "#F89FAB", "#803C3B", (D(-1), D(-0.5)))
-    S = TetrominoData("S", ((-1, -1), (0, -1), (0, 0), (1, 0)), "#66CC66", "#79FC79", "#3B803B", (D(0), D(-0.5)))
-    l = TetrominoData("l", ((-2, 0), (-1, 0), (0, 0), (1, 0)), "#6666CC", "#7979FC", "#3B3B80", (D(-0.5), D(0)))  # noqa: E741
-    T = TetrominoData("T", ((-1, 0), (0, 0), (0, -1), (1, 0)), "#CCCC66", "#FCFC79", "#80803B", (D(0), D(-0.5)))
-    o = TetrominoData("o", ((0, 0), (0, 1), (1, 1), (1, 0)), "#CC66CC", "#FC79FC", "#803B80", (D(0.5), D(0.5)))  # noqa: E741
-    L = TetrominoData("L", ((-1, 1), (-1, 0), (-1, -1), (0, -1)), "#66CCCC", "#79FCFC", "#3B8080", (D(-1), D(0)))
-    J = TetrominoData("J", ((0, 1), (0, 0), (0, -1), (-1, -1)), "#DAAA00", "#FCC600", "#806200", (D(-0.5), D(0)))
+    Z = TetrominoData(
+        name="Z",
+        coords=((D("-1.5"), D(0)), (D("-0.5"), D(0)), (D("-0.5"), D(-1)), (D("0.5"), D(-1))),
+        normal="#CC6666",
+        light="#F89FAB",
+        dark="#803C3B",
+    )
+    S = TetrominoData(
+        name="S",
+        coords=((D("-0.5"), D(-1)), (D("0.5"), D(-1)), (D("0.5"), D(0)), (D("1.5"), D(0))),
+        normal="#66CC66",
+        light="#79FC79",
+        dark="#3B803B",
+    )
+    l = TetrominoData(
+        name="l",
+        coords=((D("-1.5"), D(0)), (D("-0.5"), D(0)), (D("0.5"), D(0)), (D("1.5"), D(0))),
+        normal="#6666CC",
+        light="#7979FC",
+        dark="#3B3B80",
+    )  # noqa: E741
+    T = TetrominoData(
+        name="T",
+        coords=((D(-1), D(0)), (D(0), D(0)), (D(0), D(-1)), (D(1), D(0))),
+        normal="#CCCC66",
+        light="#FCFC79",
+        dark="#80803B",
+    )
+    o = TetrominoData(
+        name="o",
+        coords=((D("-0.5"), D("0.5")), (D("-0.5"), D("-0.5")), (D("0.5"), D("0.5")), (D("0.5"), D("-0.5"))),
+        normal="#CC66CC",
+        light="#FC79FC",
+        dark="#803B80",
+    )  # noqa: E741
+    L = TetrominoData(
+        name="L",
+        coords=((D(-1), D(1)), (D(-1), D(0)), (D(-1), D(-1)), (D(0), D(-1))),
+        normal="#66CCCC",
+        light="#79FCFC",
+        dark="#3B8080",
+    )
+    J = TetrominoData(
+        name="J",
+        coords=((D(0), D(1)), (D(0), D(0)), (D(0), D(-1)), (D(-1), D(-1))),
+        normal="#DAAA00",
+        light="#FCC600",
+        dark="#806200",
+    )
 
     @property
     def tetromino(self) -> "Tetromino":
@@ -423,12 +463,16 @@ class Tetromino(Polyomino):
         """
         self.coords: list[list[int]] = []
         self.colors: Colors = Colors("", "", "")
-        self.o: list[D] = [D(0), D(0)]
         if data is not None:
             self.name = data.name
-            self.coords = [list(c) for c in data.coords]
             self.colors = Colors(data.normal, data.light, data.dark)
-            self.o = [D(data.o[0]), D(data.o[1])]
+            coords = data.coords
+            if any(v[0] % 1 or v[1] % 1 for v in coords):
+                self.coords = [[int(v[0] - D("0.5")), int(v[1] - D("0.5"))] for v in coords]
+                self.o = [D("-0.5"), D("-0.5")]
+            else:
+                self.coords = [[int(v[0]), int(v[1])] for v in coords]
+                self.o = [D(0), D(0)]
         self.dim = Dimension.D2
 
 
