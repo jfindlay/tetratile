@@ -94,7 +94,6 @@ class GameConfig(BaseModel):
     """Main game configuration with Pydantic validation.
 
     :attr config_file: Path to config file (excluded from serialization).
-    :attr debug: Enable debug mode.
     :attr board: Board dimensions and scale.
     :attr epsilon: Floating point epsilon for rate calculations.
     :attr min_rate: Minimum fall rate.
@@ -109,7 +108,6 @@ class GameConfig(BaseModel):
     """
 
     config_file: Path | None = Field(default=None, exclude=True)
-    debug: bool = False
     board: BoardConfig = Field(default_factory=BoardConfig)
     epsilon: float = Field(default_factory=lambda: sys.float_info.epsilon * 3)
     min_rate: float = Field(default=0.0, ge=0.0)
@@ -195,7 +193,6 @@ class GameConfig(BaseModel):
 class GameOptions(TypedDict):
     """Typed dictionary for game options passed to TetraTile.
 
-    :attr debug: Enable debug mode.
     :attr scale: Pixels per block.
     :attr board: Board dimensions (scale, width, height).
     :attr epsilon: Floating point epsilon.
@@ -210,7 +207,6 @@ class GameOptions(TypedDict):
     :attr keys: Key bindings.
     """
 
-    debug: bool
     scale: int
     board: dict[str, int]
     epsilon: float
@@ -250,8 +246,6 @@ class Config:
             args = _parse_args()
             config_path = args.config_file
             config = GameConfig.from_file(Path(config_path) if config_path else Path.cwd())
-            if args.debug:
-                config.debug = args.debug
             if args.size is not None:
                 config.board.width = args.size["width"]
                 config.board.height = args.size["height"]
@@ -263,7 +257,6 @@ class Config:
                 config.constant = args.constant
 
         opts: GameOptions = {
-            "debug": config.debug,
             "scale": config.board.scale,
             "board": {
                 "scale": config.board.scale,
@@ -296,9 +289,8 @@ def _parse_args() -> argparse.Namespace:
         description="Polyomino tessellation game",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("-V", "--version", action="version", version=f"%(prog)s {_VERSION}")
+    parser.add_argument("-V", "--version", action="version", version=f"%(prog) {_VERSION}")
     parser.add_argument("-c", "--config-file", type=Path, help="Directory containing config file")
-    parser.add_argument("-d", "--debug", action="store_true", help="Run game in debug mode")
     parser.add_argument("-s", "--size", type=_parse_size, help="Board size WxH")
     parser.add_argument("-a", "--scale", type=int, help="Board scale pixels/block")
     parser.add_argument("-r", "--initial-rate", type=float, help="Initial rate blocks/second")

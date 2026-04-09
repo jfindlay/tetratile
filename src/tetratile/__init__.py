@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# !/usr/bin/env python3
 """Tetromino tessellation game.
 
 A tetromino puzzle game where players stack falling tetromino pieces
@@ -22,6 +22,8 @@ from decimal import Decimal as D
 
 from .config import BoardConfig, GameConfig
 from .event_log import EventLogger, EventType
+from .input_handler import InputHandler
+from .output import OutputHandler
 
 _VERSION: str = importlib.metadata.version("tetratile")
 
@@ -94,6 +96,34 @@ class GameEvent(enum.IntEnum):
 
     iterate = enum.auto()
     remove = enum.auto()
+
+
+@dataclass
+class GameObservation:
+    """Game state observation for AI agents and human observers.
+
+    This dataclass provides a read-only snapshot of the current game state,
+    usable by both AI agents for decision-making and by human observers
+    (including other frontends) for display purposes.
+
+    :attr board: 2D array of cell types (None for empty, tetromino name for occupied).
+    :attr current_piece: Name of current falling piece (Z, S, l, T, o, L, J).
+    :attr current_piece_coords: List of [x, y] coordinates for current piece squares.
+    :attr current_piece_state: SRS rotation state (0-3).
+    :attr next_piece: Name of next piece to spawn.
+    :attr stats: Dictionary of game statistics.
+    :attr state: Current game state (running, paused, over).
+    :attr elapsed: Elapsed game time as timedelta.
+    """
+
+    board: list[list[str | None]]
+    current_piece: str | None
+    current_piece_coords: list[list[int]]
+    current_piece_state: int
+    next_piece: str | None
+    stats: dict
+    state: GameState
+    elapsed: dt.timedelta
 
 
 @dataclass
@@ -403,49 +433,49 @@ class TetrominoType(enum.Enum):
 
     Z = TetrominoData(
         name="Z",
-        coords=((D("-1.5"), D(0)), (D("-0.5"), D(0)), (D("-0.5"), D(-1)), (D("0.5"), D(-1))),
+        coords=((D("-1"), D("0")), (D("0"), D("0")), (D("0"), D("-1")), (D("1"), D("-1"))),
         normal="#CC6666",
         light="#F89FAB",
         dark="#803C3B",
     )
     S = TetrominoData(
         name="S",
-        coords=((D("-0.5"), D(-1)), (D("0.5"), D(-1)), (D("0.5"), D(0)), (D("1.5"), D(0))),
+        coords=((D("0"), D("0")), (D("1"), D("0")), (D("0"), D("-1")), (D("-1"), D("-1"))),
         normal="#66CC66",
         light="#79FC79",
         dark="#3B803B",
     )
     l = TetrominoData(
         name="l",
-        coords=((D("-1.5"), D(0)), (D("-0.5"), D(0)), (D("0.5"), D(0)), (D("1.5"), D(0))),
+        coords=((D("-2"), D("0")), (D("-1"), D("0")), (D("0"), D("0")), (D("1"), D("0"))),
         normal="#6666CC",
         light="#7979FC",
         dark="#3B3B80",
     )  # noqa: E741
     T = TetrominoData(
         name="T",
-        coords=((D(-1), D(0)), (D(0), D(0)), (D(0), D(-1)), (D(1), D(0))),
+        coords=((D("0"), D("0")), (D("-1"), D("1")), (D("0"), D("1")), (D("1"), D("1"))),
         normal="#CCCC66",
         light="#FCFC79",
         dark="#80803B",
     )
     o = TetrominoData(
         name="o",
-        coords=((D("-0.5"), D("0.5")), (D("-0.5"), D("-0.5")), (D("0.5"), D("0.5")), (D("0.5"), D("-0.5"))),
+        coords=((D("-1"), D("0")), (D("-1"), D("-1")), (D("0"), D("0")), (D("0"), D("-1"))),
         normal="#CC66CC",
         light="#FC79FC",
         dark="#803B80",
     )  # noqa: E741
     L = TetrominoData(
         name="L",
-        coords=((D(-1), D(1)), (D(-1), D(0)), (D(-1), D(-1)), (D(0), D(-1))),
+        coords=((D("-1"), D("1")), (D("-1"), D("0")), (D("-1"), D("-1")), (D("0"), D("-1"))),
         normal="#66CCCC",
         light="#79FCFC",
         dark="#3B8080",
     )
     J = TetrominoData(
         name="J",
-        coords=((D(0), D(1)), (D(0), D(0)), (D(0), D(-1)), (D(1), D(-1))),
+        coords=((D("0"), D("1")), (D("0"), D("0")), (D("0"), D("-1")), (D("-1"), D("-1"))),
         normal="#DAAA00",
         light="#FCC600",
         dark="#806200",
@@ -463,6 +493,7 @@ class TetrominoType(enum.Enum):
 SRS_KICK_JLSTZ: dict[tuple[int, int], list[tuple[int, int]]] = {
     (0, 0): [],
     (0, 1): [(0, 0), (-1, 0), (-1, +1), (0, -2), (-1, -2)],
+    (0, 2): [(0, 0), (+1, 0), (+1, +1), (0, -2), (+1, -2)],
     (0, 3): [(0, 0), (+1, 0), (+1, +1), (0, -2), (+1, -2)],
     (1, 0): [(0, 0), (+1, 0), (+1, -1), (0, +2), (+1, +2)],
     (1, 1): [],
@@ -515,13 +546,13 @@ SRS_KICK_O: dict[tuple[int, int], list[tuple[int, int]]] = {
 }
 
 SRS_CENTERS: dict[str, tuple[D, D]] = {
-    "Z": (D(0), D("-0.5")),
-    "S": (D(0), D("-0.5")),
-    "l": (D(0), D(0)),
-    "T": (D(0), D("-0.5")),
+    "Z": (D(0), D(0)),
+    "S": (D(0), D(0)),
+    "l": (D("0.5"), D(0)),
+    "T": (D(0), D(0)),
     "o": (D(0), D(0)),
-    "L": (D("-0.5"), D("-0.5")),
-    "J": (D("-0.5"), D("-0.5")),
+    "L": (D("-0.5"), D(0)),
+    "J": (D("-0.5"), D(0)),
 }
 
 
@@ -556,10 +587,7 @@ class Tetromino(Polyomino):
         if data is not None:
             self.name = data.name
             self.colors = Colors(data.normal, data.light, data.dark)
-            if any(v[0] % 1 or v[1] % 1 for v in data.coords):
-                self.coords = [[int(v[0] - D("0.5")), int(v[1] - D("0.5"))] for v in data.coords]
-            else:
-                self.coords = [[int(v[0]), int(v[1])] for v in data.coords]
+            self.coords = [[int(v[0]), int(v[1])] for v in data.coords]
             self.o = [SRS_CENTERS.get(data.name, (D(0), D(0)))[0], SRS_CENTERS.get(data.name, (D(0), D(0)))[1]]
         self.dim = Dimension.D2
 
@@ -804,17 +832,6 @@ class Board(tk.Canvas):
             width=self.border_width,
         )
 
-        if config.debug:
-            for v in self._game_grid:
-                u = self._transform_coord(v)
-                self.create_text(
-                    (config.board.scale * u[0], config.board.scale * u[1]),
-                    text="{},{}".format(*u),
-                    fill="white",
-                    font=("Monospace", 5),
-                    anchor=tk.NW,
-                )
-
     def _transform_coord(self, v: list[int]) -> list[int]:
         """Transform tetratile coordinates to Tkinter coordinates.
 
@@ -937,10 +954,50 @@ class Board(tk.Canvas):
         :returns: Number of rows removed.
         """
         full_count, rows = self._get_rows()
-        for row in rows:
-            if row.full:
-                self.update(row, clear=True)
-        return full_count
+
+        # Identify full row indices (excluding active pieces)
+        full_row_indices = [
+            y
+            for y in range(self.height)
+            if all(self._game_grid[x, y].type and not self._game_grid[x, y].is_active for x in range(self.width))
+        ]
+
+        if not full_row_indices:
+            return 0
+
+        # Clear full rows
+        for y in full_row_indices:
+            for x in range(self.width):
+                square = self._game_grid[x, y]
+                if square.id is not None:
+                    self.delete(square.id)
+                square.type = None
+                square.id = None
+                square.colors = None
+                square.is_active = None
+
+        # Shift remaining cells down (bottom to top to avoid overwriting)
+        for y in range(self.height - 1, -1, -1):
+            for x in range(self.width):
+                if self._game_grid[x, y].type and not self._game_grid[x, y].is_active:
+                    rows_below = sum(1 for fy in full_row_indices if fy > y)
+                    if rows_below > 0:
+                        new_y = y - rows_below
+                        dest_square = self._game_grid[x, new_y]
+                        src_square = self._game_grid[x, y]
+                        dest_square.type = src_square.type
+                        dest_square.colors = src_square.colors
+                        dest_square.is_active = src_square.is_active
+                        if src_square.colors:
+                            dest_square.id = self._draw_square([x, new_y], src_square.colors)
+                        if src_square.id is not None:
+                            self.delete(src_square.id)
+                        src_square.type = None
+                        src_square.id = None
+                        src_square.colors = None
+                        src_square.is_active = None
+
+        return len(full_row_indices)
 
     def clear(self) -> None:
         """Remove all occupied squares from the board."""
@@ -1026,6 +1083,14 @@ class TetraTile(tk.Frame):
         self.pack()
         self.create_widgets()
         self.setup_events()
+
+        # Initialize default human input handler
+        from .input_human import HumanInputHandler
+
+        self._input_handler: InputHandler = HumanInputHandler(self)
+        self._output_handlers: list[OutputHandler] = []
+        self._verbose_output: bool = False
+
         self.add_piece()
         self.iterate_id = self._schedule(GameEvent.iterate)
 
@@ -1145,7 +1210,6 @@ class TetraTile(tk.Frame):
             height=self._config.board.height,
         )
         scaled_config = GameConfig(
-            debug=self._config.debug,
             board=board_config,
             epsilon=self._config.epsilon,
             min_rate=self._config.min_rate,
@@ -1251,6 +1315,204 @@ class TetraTile(tk.Frame):
         """
         self.state = state
         self.state_name.set(state)
+
+    # Internal action methods - called by both human and agent handlers
+    def _do_move_left(self) -> bool:
+        """Internal implementation for move left.
+
+        :returns: True if move was successful.
+        """
+        return self.move_piece(Transformation(EigenTransformation.horizontal, -1))
+
+    def _do_move_right(self) -> bool:
+        """Internal implementation for move right.
+
+        :returns: True if move was successful.
+        """
+        return self.move_piece(Transformation(EigenTransformation.horizontal, 1))
+
+    def _do_rotate_cw(self) -> bool:
+        """Internal implementation for clockwise rotation.
+
+        :returns: True if rotation was successful.
+        """
+        return self.move_piece(Transformation(EigenTransformation.rotation, 1))
+
+    def _do_rotate_ccw(self) -> bool:
+        """Internal implementation for counter-clockwise rotation.
+
+        :returns: True if rotation was successful.
+        """
+        return self.move_piece(Transformation(EigenTransformation.rotation, -1))
+
+    def _do_soft_drop(self) -> bool:
+        """Internal implementation for soft drop (one step down).
+
+        :returns: True if move was successful.
+        """
+        return self.move_piece(Transformation(EigenTransformation.vertical, 1))
+
+    def _do_hard_drop(self) -> None:
+        """Internal implementation for hard drop."""
+        while self.move_piece(Transformation(EigenTransformation.vertical, 1)):
+            pass
+
+    def _do_move_left_max(self) -> None:
+        """Internal implementation for move to left edge."""
+        while self.move_piece(Transformation(EigenTransformation.horizontal, -1)):
+            pass
+
+    def _do_move_right_max(self) -> None:
+        """Internal implementation for move to right edge."""
+        while self.move_piece(Transformation(EigenTransformation.horizontal, 1)):
+            pass
+
+    def _do_toggle_pause(self) -> None:
+        """Internal implementation for toggle pause."""
+        self.toggle_pause(None)
+
+    def _do_lock_piece(self) -> None:
+        """Internal implementation for lock piece without dropping."""
+        if self.piece is not None:
+            piece_type = self.piece.name
+            self._update_piece_on_board(clear=True)
+            self._update_piece_on_board(is_active=False)
+            match self._config.shadow:
+                case "shadow":
+                    if hasattr(self, "_shadow_coords"):
+                        for coord in getattr(self, "_shadow_coords", []):
+                            self.board.delete(f"shadow_{coord[0]}_{coord[1]}")
+                        self._shadow_coords = []
+            self._sync_logger_time()
+            self.event_logger.log(EventType.piece_lock, piece_type=piece_type)
+            if self.board.select_full_rows():
+                self._schedule(GameEvent.remove)
+            self.add_piece()
+
+    # Input handler management
+    def set_input_handler(self, handler: "InputHandler") -> None:
+        """Set the input handler for game control.
+
+        :param handler: InputHandler instance (HumanInputHandler or AgentInputHandler).
+        """
+        self._input_handler = handler
+
+    def get_input_handler(self) -> "InputHandler":
+        """Get the current input handler.
+
+        :returns: Current InputHandler instance.
+        """
+        return self._input_handler
+
+    # Convenience methods for direct control (REPL mode)
+    def move_left(self) -> bool:
+        """Move the current piece one step left.
+
+        :returns: True if move was successful.
+        """
+        return self._do_move_left()
+
+    def move_right(self) -> bool:
+        """Move the current piece one step right.
+
+        :returns: True if move was successful.
+        """
+        return self._do_move_right()
+
+    def rotate_cw(self) -> bool:
+        """Rotate the current piece clockwise.
+
+        :returns: True if rotation was successful.
+        """
+        return self._do_rotate_cw()
+
+    def rotate_ccw(self) -> bool:
+        """Rotate the current piece counter-clockwise.
+
+        :returns: True if rotation was successful.
+        """
+        return self._do_rotate_ccw()
+
+    def soft_drop(self) -> bool:
+        """Move the current piece one step down (soft drop).
+
+        :returns: True if move was successful.
+        """
+        return self._do_soft_drop()
+
+    def hard_drop(self) -> None:
+        """Drop the current piece to the bottom immediately."""
+        self._do_hard_drop()
+
+    def move_left_max(self) -> None:
+        """Move the current piece to the left edge (max translation)."""
+        self._do_move_left_max()
+
+    def move_right_max(self) -> None:
+        """Move the current piece to the right edge (max translation)."""
+        self._do_move_right_max()
+
+    def lock_piece(self) -> None:
+        """Lock the current piece in place without dropping."""
+        self._do_lock_piece()
+
+    def print_board(self) -> None:
+        """Print current board state to stdout."""
+        self.board._game_grid.print()
+
+    def get_stats(self) -> dict:
+        """Get current game statistics.
+
+        :returns: Dictionary with pieces, rows_cleared, rows_by_count, pieces_by_type.
+        """
+        return self._get_stats()
+
+    def set_verbose_output(self, enabled: bool) -> None:
+        """Enable or disable verbose terminal output.
+
+        :param enabled: True to enable verbose output, False to disable.
+        """
+        self._verbose_output = enabled
+
+    def _print_game_state(self) -> None:
+        """Print current game state to stdout (for verbose/agent mode)."""
+        stats = self._get_stats()
+        elapsed_seconds = self.time_elapsed.get(as_seconds=True) or 0.0
+
+        print("=" * 40)
+        print(f"STATE: {self.state}")
+        print(f"Piece: {self.piece.name if self.piece else 'None'} (state={self.piece.rotation_state if self.piece else 0})")
+        print(f"Next: {self.next_piece.name if self.next_piece else 'None'}")
+        print(f"Rows cleared: {self.removed_total.get()}")
+        print(f"Pieces: {stats.get('pieces', 0)}")
+        print(f"Time: {elapsed_seconds:.1f}s")
+        print()
+        self.board._game_grid.print()
+        print("=" * 40)
+        print()
+
+    def get_observation(self) -> "GameObservation":
+        """Get current game state for observation (AI agent or human observer).
+
+        :returns: GameObservation with current board state, pieces, and stats.
+        """
+        # Build board state as 2D array
+        board_state: list[list[str | None]] = [[None for _ in range(self.board.height)] for _ in range(self.board.width)]
+        for y in range(self.board.height):
+            for x in range(self.board.width):
+                if self.board._game_grid[x, y].type:
+                    board_state[x][y] = self.board._game_grid[x, y].type
+
+        return GameObservation(
+            board=board_state,
+            current_piece=self.piece.name if self.piece else None,
+            current_piece_coords=self.piece.coords if self.piece else [],
+            current_piece_state=self.piece.rotation_state if self.piece else 0,
+            next_piece=self.next_piece.name if self.next_piece else None,
+            stats=self._get_stats(),
+            state=self.state,
+            elapsed=self.time_elapsed.get() or dt.timedelta(),
+        )
 
     def _create_menubar(self) -> None:
         """Create the application menubar."""
@@ -1444,8 +1706,8 @@ class TetraTile(tk.Frame):
             if self.board.select_full_rows():
                 self._schedule(GameEvent.remove)
             self.add_piece()
-        if self._config.debug:
-            self.board._game_grid.print()
+        if self._verbose_output:
+            self._print_game_state()
         if self.state == GameState.running:
             self._update_rates()
             self.iterate_id = self._schedule(GameEvent.iterate)
