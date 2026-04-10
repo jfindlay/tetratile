@@ -22,7 +22,7 @@ def main() -> int:
         description="Polyomino tessellation game",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("-V", "--version", action="version", version=f"%(prog) {_VERSION}")
+    parser.add_argument("-V", "--version", action="version", version=f"%(prog)s {_VERSION}")
     parser.add_argument("-c", "--config-file", type=Path, help="Directory containing config file")
     parser.add_argument(
         "-s",
@@ -76,9 +76,6 @@ def main() -> int:
 
     # Handle REPL mode
     if args.repl:
-        import tkinter as tk
-        from .input_agent import AgentInputHandler
-
         root = tk.Tk(className="tetratile-repl")
         root.withdraw()
         game = TetraTile(config, master=root)
