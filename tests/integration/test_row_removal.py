@@ -146,21 +146,70 @@ class TestRowShiftBehavior:
         assert grid[0, 1].type == "L"
 
     def test_multiple_rows_shift_correctly(self, board: tuple[Board, GameConfig]) -> None:
-        """Test that pieces above a full row are preserved after clearing."""
+        """Test that pieces above a full row shift down after clearing."""
         board_obj, config = board
         grid = board_obj._game_grid
 
         # Set up a full row at y=0
         for x in range(grid.width):
             grid[x, 0].type = "T"
-        # Pieces above the full row
+        # Piece above the full row — should shift down by 1
         grid[0, 1].type = "Z"
 
         count = board_obj.remove_full_rows()
 
         assert count == 1
-        assert grid[0, 0].type is None
-        assert grid[0, 1].type == "Z"
+        # Z shifted down from y=1 to y=0
+        assert grid[0, 0].type == "Z"
+        # y=1 is now empty
+        assert grid[0, 1].type is None
+
+    def test_overburden_shifts_two_rows(self, board: tuple[Board, GameConfig]) -> None:
+        """Test that overburden shifts down by 2 when two full rows are cleared."""
+        board_obj, config = board
+        grid = board_obj._game_grid
+
+        # Two full rows at y=0 and y=1, partial rows above
+        for x in range(grid.width):
+            grid[x, 0].type = "T"
+            grid[x, 1].type = "S"
+        grid[0, 2].type = "Z"
+        grid[0, 3].type = "L"
+
+        count = board_obj.remove_full_rows()
+
+        assert count == 2
+        # Z shifts from y=2 to y=0, L shifts from y=3 to y=1
+        assert grid[0, 0].type == "Z"
+        assert grid[0, 1].type == "L"
+        assert grid[0, 2].type is None
+        assert grid[0, 3].type is None
+
+    def test_overburden_non_consecutive_full_rows(self, board: tuple[Board, GameConfig]) -> None:
+        """Test overburden shifts correctly with non-consecutive full rows."""
+        board_obj, config = board
+        grid = board_obj._game_grid
+
+        # Partial at y=0, full at y=1, partial at y=2, full at y=3, partial at y=4
+        grid[0, 0].type = "Z"
+        for x in range(grid.width):
+            grid[x, 1].type = "T"
+        grid[0, 2].type = "S"
+        for x in range(grid.width):
+            grid[x, 3].type = "J"
+        grid[0, 4].type = "L"
+
+        count = board_obj.remove_full_rows()
+
+        assert count == 2
+        # y=0 partial (Z): 0 full rows below it -> stays at y=0
+        assert grid[0, 0].type == "Z"
+        # y=2 partial (S): 1 full row below it (y=1) -> shifts to y=1
+        assert grid[0, 1].type == "S"
+        # y=4 partial (L): 2 full rows below it (y=1,y=3) -> shifts to y=2
+        assert grid[0, 2].type == "L"
+        assert grid[0, 3].type is None
+        assert grid[0, 4].type is None
 
 
 class TestMixedRowConditions:
@@ -174,7 +223,7 @@ class TestMixedRowConditions:
         return board, config
 
     def test_mixed_full_and_partial_rows(self, board: tuple[Board, GameConfig]) -> None:
-        """Test handling of mixed full and partial rows."""
+        """Test that partial rows above a full row shift down after clearing."""
         board_obj, config = board
         grid = board_obj._game_grid
 
@@ -186,10 +235,10 @@ class TestMixedRowConditions:
         count = board_obj.remove_full_rows()
 
         assert count == 1
-        # Full row should be cleared
-        assert grid[0, 0].type is None
-        # Partial row should be preserved
-        assert grid[0, 1].type == "S"
+        # S shifted down from y=1 to y=0
+        assert grid[0, 0].type == "S"
+        # y=1 is now empty
+        assert grid[0, 1].type is None
 
     def test_full_row_at_top_preserves_lower_rows(self, board: tuple[Board, GameConfig]) -> None:
         """Test that clearing a full row preserves rows below."""
@@ -210,19 +259,20 @@ class TestMixedRowConditions:
             assert grid[x, 1].type is None
 
     def test_stack_preservation_after_clear(self, board: tuple[Board, GameConfig]) -> None:
-        """Test that stacked pieces are preserved after row clear."""
+        """Test that stacked pieces shift down correctly after row clear."""
         board_obj, config = board
         grid = board_obj._game_grid
 
-        # Full row at y=0, partial row at y=1
+        # Full row at y=0, partial row at y=1, another partial at y=2
         for x in range(grid.width):
             grid[x, 0].type = "T"
         grid[0, 1].type = "S"
+        grid[0, 2].type = "L"
 
         count = board_obj.remove_full_rows()
 
         assert count == 1
-        # Full row should be cleared
-        assert grid[0, 0].type is None
-        # Partial row should be preserved
-        assert grid[0, 1].type == "S"
+        # S shifted from y=1 to y=0, L shifted from y=2 to y=1
+        assert grid[0, 0].type == "S"
+        assert grid[0, 1].type == "L"
+        assert grid[0, 2].type is None

@@ -99,8 +99,8 @@ class TestPieceMovement:
 
     def test_piece_at_bottom_cannot_move_down(self, grid: Grid) -> None:
         """Test that piece at bottom cannot move further down."""
-        tetromino = copy.deepcopy(tetrominoes[0])  # Z piece: y=[0, 0, -1, -1]
-        tetromino.translate([grid.width // 2, 1], grid)
+        tetromino = copy.deepcopy(tetrominoes[0])  # Z piece: upper row y=1, lower row y=0
+        tetromino.translate([grid.width // 2, 0], grid)
 
         result = tetromino.translate([0, -1], grid)
         assert result is False

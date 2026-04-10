@@ -433,14 +433,14 @@ class TetrominoType(enum.Enum):
 
     Z = TetrominoData(
         name="Z",
-        coords=((D("-1"), D("0")), (D("0"), D("0")), (D("0"), D("-1")), (D("1"), D("-1"))),
+        coords=((D("-1"), D("1")), (D("0"), D("1")), (D("0"), D("0")), (D("1"), D("0"))),
         normal="#CC6666",
         light="#F89FAB",
         dark="#803C3B",
     )
     S = TetrominoData(
         name="S",
-        coords=((D("0"), D("0")), (D("1"), D("0")), (D("0"), D("-1")), (D("-1"), D("-1"))),
+        coords=((D("-1"), D("0")), (D("0"), D("0")), (D("0"), D("1")), (D("1"), D("1"))),
         normal="#66CC66",
         light="#79FC79",
         dark="#3B803B",
@@ -454,7 +454,7 @@ class TetrominoType(enum.Enum):
     )  # noqa: E741
     T = TetrominoData(
         name="T",
-        coords=((D("0"), D("0")), (D("-1"), D("1")), (D("0"), D("1")), (D("1"), D("1"))),
+        coords=((D("-1"), D("0")), (D("0"), D("0")), (D("1"), D("0")), (D("0"), D("1"))),
         normal="#CCCC66",
         light="#FCFC79",
         dark="#80803B",
@@ -468,14 +468,14 @@ class TetrominoType(enum.Enum):
     )  # noqa: E741
     L = TetrominoData(
         name="L",
-        coords=((D("-1"), D("1")), (D("-1"), D("0")), (D("-1"), D("-1")), (D("0"), D("-1"))),
+        coords=((D("-1"), D("0")), (D("0"), D("0")), (D("1"), D("0")), (D("1"), D("1"))),
         normal="#66CCCC",
         light="#79FCFC",
         dark="#3B8080",
     )
     J = TetrominoData(
         name="J",
-        coords=((D("0"), D("1")), (D("0"), D("0")), (D("0"), D("-1")), (D("-1"), D("-1"))),
+        coords=((D("-1"), D("0")), (D("0"), D("0")), (D("1"), D("0")), (D("-1"), D("1"))),
         normal="#DAAA00",
         light="#FCC600",
         dark="#806200",
@@ -541,11 +541,11 @@ SRS_KICK_O: dict[tuple[int, int], list[tuple[int, int]]] = {
 SRS_CENTERS: dict[str, tuple[D, D]] = {
     "Z": (D(0), D(0)),
     "S": (D(0), D(0)),
-    "l": (D("0.5"), D(0)),
+    "l": (D(0), D(0)),
     "T": (D(0), D(0)),
     "o": (D(0), D(0)),
-    "L": (D("-0.5"), D(0)),
-    "J": (D("-0.5"), D(0)),
+    "L": (D(0), D(0)),
+    "J": (D(0), D(0)),
 }
 
 
@@ -960,11 +960,11 @@ class Board(tk.Canvas):
                 square.colors = None
                 square.is_active = None
 
-        # Shift remaining cells down (bottom to top to avoid overwriting)
-        for y in range(self.height - 1, -1, -1):
+        # Shift remaining cells down; iterate bottom-to-top to avoid overwriting
+        for y in range(self.height):
             for x in range(self.width):
                 if self._game_grid[x, y].type and not self._game_grid[x, y].is_active:
-                    rows_below = sum(1 for fy in full_row_indices if fy > y)
+                    rows_below = sum(1 for fy in full_row_indices if fy < y)
                     if rows_below > 0:
                         new_y = y - rows_below
                         dest_square = self._game_grid[x, new_y]

@@ -156,7 +156,7 @@ class TestBoardFullRows:
         assert result is True
 
     def test_remove_full_rows_clears_only_full(self, board: tuple[Board, GameConfig]) -> None:
-        """Test that remove_full_rows clears only full rows."""
+        """Test that remove_full_rows clears full rows and shifts overburden down."""
         board_obj, config = board
         grid = board_obj._game_grid
 
@@ -167,10 +167,10 @@ class TestBoardFullRows:
 
         board_obj.remove_full_rows()
 
-        for x in range(grid.width):
-            assert grid[x, 0].type is None
-
-        assert grid[0, 1].type == "Z"
+        # Z at y=1 shifts down to y=0 after full row cleared
+        assert grid[0, 0].type == "Z"
+        # y=1 is now empty
+        assert grid[0, 1].type is None
 
     def test_remove_full_rows_shifts_upper_rows_down(self, board: tuple[Board, GameConfig]) -> None:
         """Test that rows above cleared rows shift down."""

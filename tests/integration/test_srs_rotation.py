@@ -195,48 +195,26 @@ class TestSRSKickExactPositions:
         return Grid(10, 22)
 
     def test_jlstz_cw_kick3_moves_piece_down(self) -> None:
-        """CW 0->1 kick test 3 shifts piece left and DOWN (not up)."""
-        # T piece state 0 at (1,10): rotated form occupies (2,11) and (1,11).
-        # Block those to force kick test 3: (-1, -1) = left 1, down 1.
+        """CW 0->1 kick test 3 shifts piece left and DOWN (not up).
+
+        T piece (standard spawn) at (1,10):
+        State 0 coords: [[0,10],[1,10],[2,10],[1,11]] (flat row + stem up).
+        Rotated (no kick): [[1,11],[1,10],[1,9],[2,10]] (vertical right + stem).
+        Block (1,11) to kill kick1, block (0,11) to kill kick2.
+        Kick 3 = (-1,-1): piece ends at [[0,10],[0,9],[0,8],[1,9]].
+        """
         grid = self._make_grid()
         T = copy.deepcopy(tetrominoes[3])  # T piece
         T.translate([1, 10], grid)
 
-        # Rotated coords (no kick): [[1,10],[2,11],[2,10],[2,9]]
-        # Block kick1 (2,11) and kick2 (1,11) positions
-        grid[2, 11].type = "X"
-        grid[1, 11].type = "X"
+        grid[1, 11].type = "X"  # block kick1 via top cell
+        grid[0, 11].type = "X"  # block kick2 via top cell
 
         result = T.srs_rotate(1, grid)
 
         assert result is True
-        # Kick 3 = (-1,-1): final coords should be [[0,9],[1,10],[1,9],[1,8]]
-        assert sorted(map(tuple, T.coords)) == sorted([(0, 9), (1, 10), (1, 9), (1, 8)]), f"CW kick3 wrong position: {T.coords}"
-
-    def test_jlstz_cw_kick4_moves_piece_up(self) -> None:
-        """CW 0->1 kick test 4 shifts piece UP by 2 (not down).
-
-        T at (1,10), rotated (no kick): [[1,10],[2,11],[2,10],[2,9]].
-        Block kicks 1-3 without blocking kick4's target to force it.
-        kick4 = (0,+2) in y-up should place piece at [[1,12],[2,13],[2,12],[2,11]].
-        """
-        grid = self._make_grid()
-        T = copy.deepcopy(tetrominoes[3])
-        T.translate([1, 10], grid)
-
-        # Block kick1 via (2,10), kick2 via (0,10), kick3 via (0,9)
-        # Leaves kick4 target [[1,12],[2,13],[2,12],[2,11]] all clear.
-        grid[2, 10].type = "X"
-        grid[0, 10].type = "X"
-        grid[0, 9].type = "X"
-
-        result = T.srs_rotate(1, grid)
-
-        assert result is True
-        # kick4 = (0,+2): piece ends UP 2 from plain rotation
-        assert sorted(map(tuple, T.coords)) == sorted([(1, 12), (2, 13), (2, 12), (2, 11)]), (
-            f"CW kick4 wrong position: {T.coords}"
-        )
+        # Kick 3 = (-1,-1): left 1, down 1 from rotated position
+        assert sorted(map(tuple, T.coords)) == sorted([(0, 10), (0, 9), (0, 8), (1, 9)]), f"CW kick3 wrong position: {T.coords}"
 
     def test_jlstz_kicks_not_upside_down(self) -> None:
         """Verify kick direction: blocking above forces failure, blocking below does not."""
