@@ -9,8 +9,9 @@ Tetratile is a polyomino tessellation game whose implementation is
 *transparently mathematical by design*.  Every significant type and
 operation maps directly to a named mathematical concept: the game board
 is a finite sublattice, the pieces are elements of a free abelian group
-of lattice-cell sets, and every valid player or agent move is an element
-of the group :math:`\mathbb{Z}^2 \rtimes C_4`.
+of lattice-cell sets, every valid player or agent move is an element of
+the group :math:`\mathbb{Z}^2 \rtimes C_4`, and the game as a whole is
+a driven cellular automaton on the integer lattice :math:`\mathbb{Z}^2`.
 
 This document is the authoritative mathematical reference for the
 codebase.  All descriptions refer to the post-refactor target state of
@@ -453,6 +454,261 @@ These operations are *not* eigentransformations (atomic generators of
 :class:`InputHandler` layer, not in the :class:`EigenTransformation`
 type alias.
 
+.. _cellular-automata:
+
+Relationship to Cellular Automata
+-----------------------------------
+
+The polyomino game is not merely *analogous* to a cellular automaton — in
+several places the correspondence is exact and formal.  This section
+develops the connections systematically, from the definitional link through
+polyomino connectivity, to the formal driven-CA model, to empirical results
+on statistical physics and computational complexity.
+
+Polyomino Connectivity and the Von Neumann Neighbourhood
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A cellular automaton on :math:`\mathbb{Z}^2` is characterised by its
+**neighbourhood**: the finite set :math:`\mathcal{N} \subset \mathbb{Z}^2`
+of relative positions that influence a cell's next state.  The two canonical
+choices are:
+
+* **Von Neumann neighbourhood** :math:`\mathcal{N}_4 = \{(0,0), (\pm 1, 0),
+  (0, \pm 1)\}` — the four edge-adjacent cells plus the cell itself.
+* **Moore neighbourhood** :math:`\mathcal{N}_8` — all eight cells within
+  Chebyshev distance 1.
+
+The definition of a polyomino specifies connectivity by **shared edges**
+(not corners).  Two cells are polyomino-connected iff they are
+:math:`\mathcal{N}_4`-adjacent.  The von Neumann neighbourhood is therefore
+not an incidental feature of the polyomino concept — it *is* the founding
+topological structure.  A connected subset of :math:`\mathbb{Z}^2` using
+Moore-neighbourhood connectivity would define a different family
+(variously called *polyplets* or *polykings*), with different count
+sequences.
+
+This means that every result in polyomino theory implicitly assumes the von
+Neumann neighbourhood, and every von-Neumann CA operates on the same
+topological substrate as this game.
+
+The Game as a Driven Cellular Automaton
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A standard (autonomous) CA is a tuple :math:`(\mathbb{Z}^d, Q, \mathcal{N},
+\varphi)` where :math:`Q` is a finite alphabet, :math:`\mathcal{N}` is a
+neighbourhood, and :math:`\varphi: Q^{\mathcal{N}} \to Q` is a local
+transition rule, applied to every cell simultaneously.  The global map
+:math:`\Phi: Q^{\mathbb{Z}^d} \to Q^{\mathbb{Z}^d}` is defined by
+:math:`\Phi(C)(x) = \varphi\bigl(C\big|_{x + \mathcal{N}}\bigr)`.
+
+The polyomino game is an instance of a **driven CA** (also called an *input
+CA* or *nonautonomous CA*): a CA paired with an external input stream
+:math:`\sigma: \mathbb{N} \to Q^{\mathbb{Z}^2}` that modifies the
+configuration at each step.  The full update at tick :math:`t` is
+
+.. math::
+
+   C_{t+1}
+   = \Phi_{\text{row-remove}}\bigl(
+       \Phi_{\text{lock}}\bigl(
+         C_t \,\oplus\, \sigma_t
+       \bigr)
+     \bigr),
+
+where:
+
+* :math:`\sigma_t` is the player's or agent's move — the
+  :class:`EigenTransformation` applied to the active piece.  The player is
+  literally the **external drive** of the CA.
+* :math:`\oplus` denotes the injection of the moved piece into the
+  configuration.
+* :math:`\Phi_{\text{lock}}` transitions cells belonging to the active piece
+  from *active* to *locked* state when the piece can no longer descend.
+* :math:`\Phi_{\text{row-remove}}` applies the row-removal rule (see below).
+
+The state alphabet is :math:`Q = \{\text{empty}, \text{Z}, \text{S},
+\text{l}, \text{T}, \text{o}, \text{L}, \text{J}\}` — eight elements.
+
+The code expresses this structure directly:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 35 65
+
+   * - CA concept
+     - Code location
+   * - Configuration :math:`C_t`
+     - :attr:`.GameObservation.board` — row-major ``board[y][x]``, alphabet :math:`Q`
+   * - Global transition step
+     - :meth:`.TetraTile.iterate` — one gravity + lock + row-remove cycle
+   * - Row-removal rule :math:`\Phi_{\text{row-remove}}`
+     - :meth:`.Grid.remove_and_shift` (or :meth:`.Board.remove_full_rows`)
+   * - External drive :math:`\sigma_t`
+     - :class:`.InputHandler` — player or agent sends the eigentransformation
+   * - CA oracle / controller
+     - :meth:`.Agent.select_action` — pure function :math:`C_t \to \text{Action}`
+   * - Random drive (stochastic baseline)
+     - :class:`.RandomAgent` — uniform random :math:`\sigma_t`; equivalent to the *random Tetris* model
+
+Row Removal as a Threshold Totalistic Rule
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A **totalistic CA** is one where the next state of a cell depends only on
+the *count* (not the arrangement) of neighbours in each state.  The row
+removal rule is a totalistic threshold rule at the **row** scale:
+
+.. math::
+
+   \text{row } y \text{ fires}
+   \;\iff\;
+   \sum_{x=0}^{w-1}
+   \mathbf{1}\bigl[\mathcal{G}(x, y) \neq \emptyset\bigr] = w.
+
+When a row fires, it is erased and all locked cells above it shift down.
+This is structurally identical to **bootstrap percolation** threshold rules
+and to the firing condition in the Abelian Sandpile Model (see below): a
+site fires when its local density reaches a critical value.
+
+The key deviation from standard CA: row fullness is a **non-local**
+condition (range :math:`w/2`, not a bounded neighbourhood).  A standard CA
+with fixed finite neighbourhood :math:`\mathcal{N}_R` cannot detect row
+fullness in a single step.  However, it *can* be computed purely locally in
+:math:`O(w)` CA steps by propagating an accumulated count left-to-right
+along the row — a carry-propagation CA.  The game's row removal is the
+instantaneous, non-local equivalent of this :math:`O(w)`-step local
+computation.
+
+In the code, :meth:`.Grid.remove_and_shift` implements the instantaneous
+version: it computes full rows in one pass and shifts remaining cells
+down in a second pass, achieving the same result as the iterated local CA
+in two linear scans rather than :math:`O(w)` CA steps.
+
+Analogies with Conway's Game of Life
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Conway's Game of Life classifies every pattern into one of three types.
+The polyomino game's dynamics map precisely onto this taxonomy:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - Life concept
+     - Polyomino game analog
+   * - **Still life** — a configuration that is a fixed point of :math:`\Phi`
+     - A locked piece in :math:`\mathcal{G}`.  Once written, it never changes
+       (absent row removal).  Every locked cell is part of a still life.
+   * - **Oscillator** — a configuration with period :math:`k > 0`
+     - The rotating active piece.  Each application of :math:`r` returns the
+       piece to the same shape after :math:`k = 4` steps (the :math:`C_4`
+       orbit).  The piece is a period-4 oscillator in the extended
+       configuration.
+   * - **Glider** — a configuration that translates periodically
+     - The falling piece.  Under gravity alone (no player input) the piece
+       translates by :math:`-e_y` every tick, repeating its shape unchanged.
+       It is a period-1 glider moving at speed 1 cell/tick.
+
+The **lock event** is the game's analog of a **glider collision**: the
+falling glider encounters the still-life layer (the stack), is absorbed into
+it, and may trigger a **row-removal annihilation event** that erases part of
+the still-life layer.  In Life, glider guns can fire gliders at eaters; in
+the game, a well-aimed piece can trigger a cascade of row clearances — the
+avalanche described in the next section.
+
+The analogy also highlights what the game *lacks* by comparison with Life:
+there is no spontaneous pattern evolution in :math:`\mathcal{G}` between
+lock events.  The locked cells are frozen; the only dynamics come from the
+externally driven glider.  The game is *not* autonomous in the CA sense.
+
+Sandpile Models and Self-Organised Criticality
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The **Abelian Sandpile Model** (Bak, Tang & Wiesenfeld 1987; Dhar 1990) is
+a CA on :math:`\mathbb{Z}^2` in which each cell :math:`(x, y)` holds an
+integer grain count :math:`h(x, y)`.  When :math:`h(x, y) \geq 4`, the
+cell **topples**: it loses 4 grains and each of its four von Neumann
+neighbours gains 1.  Grains may cascade through the lattice in an
+*avalanche*.  Bak, Tang and Wiesenfeld showed that the stationary state
+under random grain addition exhibits **self-organised criticality** (SOC):
+avalanche sizes and durations follow power laws with no external tuning
+parameter.
+
+The polyomino game, in the *column-height representation*, is a modified
+sandpile.  Let :math:`h(x)` be the height of the highest occupied cell in
+column :math:`x`.  Pieces land on top of columns (grains fall on the sand
+surface).  When the minimum height across a row reaches the row index —
+equivalently, when row :math:`y` is completely filled — that row fires
+(is removed) and the overburden falls by one unit.  This is a **non-local
+sandpile** where the firing condition is row-completion rather than per-cell
+grain overflow.
+
+Aste and Sherrington (1999) showed that **random Tetris** — pieces selected
+and placed uniformly at random — develops a *glassy* low-temperature phase:
+long quiescent periods during which the stack grows, punctuated by sudden
+cascades of row clearances.  The avalanche sizes (number of rows cleared in
+a single cascade) follow a power law, the signature of SOC.  In their model
+the game board is a driven, dissipative, threshold CA, and the emergence of
+criticality requires no tuning — it arises from the geometry of the pieces
+and the threshold row-removal rule alone.
+
+For the agent-based analysis in this codebase, the random Tetris result is
+the natural **baseline**: the :class:`.RandomAgent` produces exactly the
+random-drive Aste–Sherrington model.  An agent that scores significantly
+above the random baseline is navigating the SOC landscape non-trivially.
+
+Tile Self-Assembly
+~~~~~~~~~~~~~~~~~~~
+
+Winfree (1998) introduced the **abstract Tile Assembly Model** (aTAM) in
+the context of DNA computing.  Square tiles with coloured edges attach to a
+growing assembly when the edge colours of adjacent tiles match and the total
+binding strength exceeds a threshold :math:`\tau`.  The assembled structure
+is a configuration in :math:`\mathbb{Z}^2` — exactly an occupancy map
+:math:`\mathcal{G}`.  For :math:`\tau \geq 2`, the aTAM is Turing complete.
+
+The locked occupancy :math:`\mathcal{G}` is a tile assembly configuration.
+The polyomino game is a **controlled tile assembly** where:
+
+* The player selects the next tile (tetromino) from the seven one-sided
+  types.
+* Gravity determines the attachment height (the tile falls until it rests
+  on the existing assembly).
+* Row removal is a **disassembly** rule unique to the game — tiles that
+  complete a full row are removed, which has no direct aTAM analog.
+
+The aTAM connection suggests that the locked stack can, in principle,
+encode arbitrary computations via careful piece placement — consistent with
+the computational hardness results described below.
+
+Computational Hardness
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Breukelaar, Demaine et al. (2004) proved that several natural decision
+problems about Tetris are **NP-complete**:
+
+* Given an initial board :math:`\mathcal{G}_0` and a sequence of :math:`k`
+  incoming pieces, can the player survive (avoid a game-over)?
+* Can all rows be cleared?
+* Can a given target configuration be reached?
+
+The proofs construct gadgets from piece sequences that implement logical
+gates, wires, and memory — essentially building a circuit inside the game
+board.  This is the Tetris analog of the classical CA result that Conway's
+Life is Turing complete: in both cases, carefully engineered configurations
+implement universal computation.
+
+The NP-hardness tells us something precise about the :class:`.Agent`
+interface: since computing the optimal action sequence is NP-hard, no
+polynomial-time :class:`.Agent.select_action` implementation can be optimal
+in the worst case (unless P = NP).  The :class:`.RandomAgent` baseline and
+any trained agent are therefore operating in the space between random and
+optimal, which is computationally intractable to bridge exactly.
+
+Whether the **autonomous row-removal dynamics** (ignoring player input)
+constitute a computationally universal CA is an open question — but the
+NP-hardness of the strategy problem strongly suggests that the configuration
+space contains significant computational structure.
+
 .. _architecture:
 
 The Architecture: Input / Output / State
@@ -657,14 +913,36 @@ The codebase embodies the following mathematical design principles.
 References
 ----------
 
+* Aste, T. & Sherrington, D. (1999). Glassy behavior in a model for
+  the game of Tetris. *Journal of Physics A: Mathematical and General*,
+  32(42), 7049–7056.  (Self-organised criticality and the glassy phase
+  in random Tetris; baseline for the :class:`.RandomAgent` analysis.)
+* Bak, P., Tang, C. & Wiesenfeld, K. (1987). Self-organized criticality:
+  An explanation of 1/f noise. *Physical Review Letters*, 59(4), 381–384.
+  (Foundational sandpile model and self-organised criticality.)
+* Breukelaar, R., Demaine, E. D., Hohenberger, S., Hoogeboom, H. J.,
+  Kosters, W. A. & Liben-Nowell, D. (2004). Tetris is hard, even to
+  approximate. *International Journal of Computational Geometry and
+  Applications*, 14(1–2), 41–68.  (NP-completeness of Tetris decision
+  problems; implications for agent optimality.)
+* Dhar, D. (1990). Self-organized critical state of sandpile automaton
+  models. *Physical Review Letters*, 64(14), 1613–1616.  (The abelian
+  sandpile model and its connection to threshold CA.)
 * Golomb, S. W. (1994). *Polyominoes: Puzzles, Patterns, Problems, and
   Packings* (2nd ed.). Princeton University Press.
-* The Tetris guideline (SRS): https://tetris.wiki/SRS (consulted for
-  historical context; the functional kick system in this game is an
-  independent algebraic derivation).
 * Hestenes, D. & Sobczyk, G. (1984). *Clifford Algebra to Geometric
   Calculus*. Reidel.  (Referenced in discussion of GA; not used in the
   implementation.)
 * Humphreys, J. E. (1990). *Reflection Groups and Coxeter Groups*.
   Cambridge University Press.  (For the hyperoctahedral group
   :math:`B_N`.)
+* The Tetris guideline (SRS): https://tetris.wiki/SRS (consulted for
+  historical context; the functional kick system in this game is an
+  independent algebraic derivation).
+* Winfree, E. (1998). Algorithmic self-assembly of DNA: Theoretical
+  motivations and connections to experiments. *Journal of Biomolecular
+  Structure and Dynamics*, 11, 263–270.  (Tile Assembly Model; the locked
+  occupancy map as a tile assembly configuration.)
+* Wolfram, S. (2002). *A New Kind of Science*. Wolfram Media.
+  (Foundational reference on cellular automata, totalistic rules, and
+  computational universality.)
