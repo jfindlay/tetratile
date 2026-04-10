@@ -121,7 +121,7 @@ class GameObservation:
     current_piece_coords: list[list[int]]
     current_piece_state: int
     next_piece: str | None
-    stats: dict
+    stats: dict[str, typing.Any]
     state: GameState
     elapsed: dt.timedelta
 
@@ -181,9 +181,10 @@ class Grid:
     """The rectangular region of squares that comprises the game state.
 
     The squares map to integer coordinates in the first quadrant of the
-    Cartesian plane. Each square is represented by the point at its upper
-    right corner, with the origin at the upper right corner of the
-    lower left square.
+    Cartesian plane (y-up).  Each square at coordinate ``(x, y)`` occupies
+    the unit cell ``[x, x+1] × [y, y+1]``; the integer point ``(x, y)``
+    is therefore the **lower-left corner** of that cell.  ``Grid[0, 0]``
+    is the bottom-left square; ``Grid[width-1, height-1]`` is the top-right.
 
     :attr width: Number of columns in the grid.
     :attr height: Number of rows in the grid.
@@ -275,13 +276,14 @@ class Polyomino:
     r"""Define a polyomino by coordinates to each of its squares.
 
     Provides valid transformations for a polyomino on the
-    :math:`\mathbb Z^{\mathrm dim}` lattice.
+    :math:`\mathbb Z^{\mathrm{dim}}` lattice (y-up Cartesian coordinates).
+    Each coordinate ``(x, y)`` in ``coords`` identifies a unit cell by its
+    **lower-left corner** at ``(x, y)`` in the plane.
 
     :attr dim: Dimensionality of the polyomino.
-    :attr deg: Degree (number of squares).
     :attr colors: Colors for rendering.
-    :attr coords: Coordinates to the upper right corner of each square.
-    :attr o: Proper origin, computed from coordinates.
+    :attr coords: Lower-left corner coordinates of each constituent cell.
+    :attr o: Centroid of ``coords``, used as the rotation pivot.
     :attr name: Name identifier.
     :attr full: Whether the piece represents a full row.
     :attr full_below_count: Number of full rows below this piece.
@@ -334,18 +336,23 @@ class Polyomino:
                 return self.translate(t, grid)
             case EigenTransformation.min | EigenTransformation.max | EigenTransformation.bottom:
                 return self.translate(t, grid)
+        return False  # unreachable: all EigenTransformation members are covered above
 
     def rotate(self, r: Transformation, grid: Grid) -> bool:
         """Rotate the polyomino about its proper origin.
 
-        :param r: Rotation transformation with multiple indicating direction.
+        Applies the standard 2D rotation in mathematical (y-up) coordinates:
+        ``(dx, dy) -> (dy, -dx)`` for ``multiple=+1`` (clockwise),
+        ``(dx, dy) -> (-dy, dx)`` for ``multiple=-1`` (counterclockwise).
+
+        :param r: Rotation transformation; ``multiple=+1`` is CW, ``multiple=-1`` is CCW.
         :param grid: The grid to rotate within.
         :returns: True if rotation was successful and polyomino fits in grid.
         """
         coords = [[0 for d in range(self.dim)] for _ in self.coords]
         for i, _ in enumerate(self.coords):
-            coords[i][0] = int(-r.multiple * (self.coords[i][1] - self.o[1]) + self.o[0])
-            coords[i][1] = int(r.multiple * (self.coords[i][0] - self.o[0]) + self.o[1])
+            coords[i][0] = int(r.multiple * (self.coords[i][1] - self.o[1]) + self.o[0])
+            coords[i][1] = int(-r.multiple * (self.coords[i][0] - self.o[0]) + self.o[1])
         if grid.check(coords):
             self.coords = coords
             return True
@@ -445,13 +452,13 @@ class TetrominoType(enum.Enum):
         light="#79FC79",
         dark="#3B803B",
     )
-    l = TetrominoData(
+    l = TetrominoData(  # noqa: E741
         name="l",
         coords=((D("-2"), D("0")), (D("-1"), D("0")), (D("0"), D("0")), (D("1"), D("0"))),
         normal="#6666CC",
         light="#7979FC",
         dark="#3B3B80",
-    )  # noqa: E741
+    )
     T = TetrominoData(
         name="T",
         coords=((D("-1"), D("0")), (D("0"), D("0")), (D("1"), D("0")), (D("0"), D("1"))),
@@ -596,9 +603,13 @@ class Tetromino(Polyomino):
         return SRS_KICK_JLSTZ
 
     def _rotate_coords(self, direction: int) -> list[list[int]]:
-        """Calculate rotated coordinates about the origin.
+        """Calculate rotated coordinates about the SRS origin.
 
-        :param direction: Rotation direction (+1=CW, -1=CCW in screen coords).
+        Applies ``(dx, dy) -> (dy, -dx)`` for ``direction=+1`` (clockwise) and
+        ``(dx, dy) -> (-dy, dx)`` for ``direction=-1`` (counterclockwise), both
+        in the mathematical y-up coordinate system used throughout the game.
+
+        :param direction: Rotation direction (+1=CW, -1=CCW in mathematical y-up coords).
         :returns: New coordinates after rotation.
         """
         coords = [[0 for _ in range(self.dim)] for _ in self.coords]
@@ -610,7 +621,11 @@ class Tetromino(Polyomino):
     def srs_rotate(self, direction: int, grid: Grid) -> bool:
         """Rotate using SRS with full kick tables.
 
-        :param direction: Rotation direction (+1=CW, -1=CCW in screen coords).
+        Attempts each kick offset from the SRS table in order, applying the
+        rotation ``(dx, dy) -> (dy, -dx)`` for CW or ``(-dy, dx)`` for CCW
+        in the mathematical y-up coordinate system.
+
+        :param direction: Rotation direction (+1=CW, -1=CCW in mathematical y-up coords).
         :param grid: The grid to rotate within.
         :returns: True if rotation was successful.
         """
@@ -1353,7 +1368,7 @@ class TetraTile(tk.Frame):
 
     def _do_toggle_pause(self) -> None:
         """Internal implementation for toggle pause."""
-        self.toggle_pause(None)
+        self.pause(None)
 
     def _do_lock_piece(self) -> None:
         """Internal implementation for lock piece without dropping."""
@@ -1444,7 +1459,7 @@ class TetraTile(tk.Frame):
         """Print current board state to stdout."""
         self.board._game_grid.print()
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> dict[str, typing.Any]:
         """Get current game statistics.
 
         :returns: Dictionary with pieces, rows_cleared, rows_by_count, pieces_by_type.
@@ -1465,7 +1480,8 @@ class TetraTile(tk.Frame):
 
         print("=" * 40)
         print(f"STATE: {self.state}")
-        print(f"Piece: {self.piece.name if self.piece else 'None'} (state={self.piece.rotation_state if self.piece else 0})")
+        piece_state = self.piece.rotation_state if isinstance(self.piece, Tetromino) else 0
+        print(f"Piece: {self.piece.name if self.piece else 'None'} (state={piece_state})")
         print(f"Next: {self.next_piece.name if self.next_piece else 'None'}")
         print(f"Rows cleared: {self.removed_total.get()}")
         print(f"Pieces: {stats.get('pieces', 0)}")
@@ -1487,15 +1503,17 @@ class TetraTile(tk.Frame):
                 if self.board._game_grid[x, y].type:
                     board_state[x][y] = self.board._game_grid[x, y].type
 
+        elapsed_secs = float(self.time_elapsed.get(as_seconds=True) or 0.0)
+        current_piece: Tetromino | None = self.piece if isinstance(self.piece, Tetromino) else None
         return GameObservation(
             board=board_state,
-            current_piece=self.piece.name if self.piece else None,
-            current_piece_coords=self.piece.coords if self.piece else [],
-            current_piece_state=self.piece.rotation_state if self.piece else 0,
+            current_piece=current_piece.name if current_piece else None,
+            current_piece_coords=current_piece.coords if current_piece else [],
+            current_piece_state=current_piece.rotation_state if current_piece else 0,
             next_piece=self.next_piece.name if self.next_piece else None,
             stats=self._get_stats(),
             state=self.state,
-            elapsed=self.time_elapsed.get() or dt.timedelta(),
+            elapsed=dt.timedelta(seconds=elapsed_secs),
         )
 
     def _create_menubar(self) -> None:
@@ -1535,10 +1553,10 @@ class TetraTile(tk.Frame):
         for name, key in self._config.keys.model_dump().items():
             self.master.bind(key, getattr(self, name))
 
-    def pause(self, event: tk.Event) -> None:
+    def pause(self, event: tk.Event | None = None) -> None:
         """Toggle pause state.
 
-        :param event: Tkinter event (unused).
+        :param event: Tkinter event (unused). May be None when called programmatically.
         """
         if self.state == GameState.running:
             self.after_cancel(self.iterate_id)
@@ -1789,7 +1807,7 @@ class TetraTile(tk.Frame):
             self._sync_logger_time()
             self.event_logger.log(EventType.row_clear, count=full_count)
 
-    def _get_stats(self) -> dict[str, int | list[int] | dict[str, int]]:
+    def _get_stats(self) -> dict[str, typing.Any]:
         """Get current game statistics.
 
         :returns: Dictionary of game statistics.

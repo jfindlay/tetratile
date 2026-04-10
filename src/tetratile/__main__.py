@@ -1,7 +1,10 @@
 """Entry point for python -m tetratile."""
 
 import argparse
+import code
+import contextlib
 import importlib.metadata
+import sys
 import tkinter as tk
 from pathlib import Path
 
@@ -97,21 +100,23 @@ def main() -> int:
         print("\nExample: game.soft_drop()")
         print("-" * 40)
 
-        import code
-        import sys
-
         class GameConsole(code.InteractiveConsole):
-            def push(self, line):
+            """Interactive console with a game.quit shortcut."""
+
+            def push(self, line: str) -> bool:
+                """Push a line of source text to the interpreter.
+
+                :param line: Source line to execute.
+                :returns: True if more input is required.
+                """
                 if line.strip() == "game.quit":
                     print("Goodbye!")
                     sys.exit(0)
                 return super().push(line)
 
         console = GameConsole({"game": game})
-        try:
+        with contextlib.suppress(SystemExit):
             console.interact(banner="")
-        except SystemExit:
-            pass
         return 0
 
     # Handle agent mode
@@ -123,7 +128,7 @@ def main() -> int:
             verbose=args.verbose,
         )
         result = runner.run()
-        print(f"\n=== GAME OVER ===")
+        print("\n=== GAME OVER ===")
         print(f"Steps: {result.steps}")
         print(f"Stats: {result.stats}")
         return 0

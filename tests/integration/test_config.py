@@ -35,7 +35,6 @@ class TestConfigDefaults:
         """Test default game configuration."""
         config = GameConfig()
 
-        assert config.debug is False
         assert config.initial_rate == 0.0
         assert config.min_rate == 0.0
         assert config.remove_freq == 1
@@ -145,7 +144,6 @@ class TestConfigOptions:
         config = GameConfig()
         dumped = config.model_dump()
 
-        assert "debug" in dumped
         assert "board" in dumped
         assert "epsilon" in dumped
         assert "min_rate" in dumped

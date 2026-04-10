@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import enum
 import json
 import random
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta, timezone
-import enum
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -183,7 +183,7 @@ class EventLogger:
         self._log.stats = None
         self._seed = seed if seed is not None else random.getrandbits(32)
         self._log.seed = self._seed
-        self._start_time = datetime.now(timezone.utc)
+        self._start_time = datetime.now(UTC)
         self._log.timestamp_start = self._start_time.isoformat()
         self._elapsed_ms = 0
         self._paused_ms = 0
@@ -194,7 +194,7 @@ class EventLogger:
         :param stats: Final game statistics.
         """
         self._log.stats = stats
-        self._log.timestamp_end = datetime.now(timezone.utc).isoformat()
+        self._log.timestamp_end = datetime.now(UTC).isoformat()
 
     def log(
         self,

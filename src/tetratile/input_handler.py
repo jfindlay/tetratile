@@ -4,7 +4,13 @@ This module provides the interface for different input sources (human keyboard o
 Both frontends use identical input methods, ensuring parity between human and agent control.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from . import TetraTile
 
 
 class InputHandler(ABC):
@@ -17,7 +23,7 @@ class InputHandler(ABC):
     :attr game: Reference to the TetraTile game instance.
     """
 
-    def __init__(self, game: "TetraTile") -> None:
+    def __init__(self, game: TetraTile) -> None:
         """Initialize the input handler.
 
         :param game: Reference to the TetraTile game instance.

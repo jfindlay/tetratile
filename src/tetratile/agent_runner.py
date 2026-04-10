@@ -4,12 +4,23 @@ This module provides the AgentRunner class that runs the game
 with agent input while optionally allowing human observation.
 """
 
-from dataclasses import dataclass
+from __future__ import annotations
 
-from . import GameConfig, TetraTile
-from .input_agent import AgentInputHandler
+import random
+import tkinter as tk
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+from .config import GameConfig
 from .input_handler import InputHandler
 from .output import AgentOutputHandler
+
+if TYPE_CHECKING:
+    from . import GameObservation
+
+# Imported at module level (not TYPE_CHECKING) because needed at runtime
+from . import GameState, TetraTile  # noqa: E402
 
 
 @dataclass
@@ -22,9 +33,9 @@ class GameResult:
     :attr steps: Number of input actions taken.
     """
 
-    stats: dict
-    events: list
-    final_observation: "GameObservation"
+    stats: dict[str, Any]
+    events: list[Any]
+    final_observation: GameObservation
     steps: int
 
 
@@ -51,16 +62,18 @@ class AgentRunner:
         self._agent_class = agent_class
         self._verbose = verbose
         self._game: TetraTile | None = None
-        self._agent_input: AgentInputHandler | None = None
+        self._agent: RandomAgent | None = None
         self._agent_output: AgentOutputHandler | None = None
 
-    def _create_agent(self) -> InputHandler:
+    def _create_agent(self, game: TetraTile) -> RandomAgent:
         """Create an agent of the specified class.
 
+        :param game: The TetraTile game instance.
         :returns: InputHandler instance for the agent.
+        :raises ValueError: If agent_class is not recognized.
         """
         if self._agent_class == "random":
-            return RandomAgent(self._game)
+            return RandomAgent(game)
         raise ValueError(f"Unknown agent class: {self._agent_class}")
 
     def run(self, max_steps: int | None = None) -> GameResult:
@@ -69,51 +82,49 @@ class AgentRunner:
         :param max_steps: Maximum number of agent actions. If None, run to game over.
         :returns: GameResult with stats, events, and final observation.
         """
-        import tkinter as tk
-
         # Create Tk root (required for TetraTile)
         root = tk.Tk(className="tetratile-agent")
         root.withdraw()  # Hide window for headless mode
 
         # Create game
-        self._game = TetraTile(self._config, master=root)
+        game = TetraTile(self._config, master=root)
+        self._game = game
 
-        # Set up agent input
-        self._agent_input = self._create_agent()
-        self._game.set_input_handler(self._agent_input)
+        # Set up agent
+        agent = self._create_agent(game)
+        self._agent = agent
+        game.set_input_handler(agent)
 
         # Enable verbose output if requested
         if self._verbose:
-            self._game.set_verbose_output(True)
+            game.set_verbose_output(True)
 
         # Set up agent output for observation
-        self._agent_output = AgentOutputHandler(self._game)
+        self._agent_output = AgentOutputHandler(game)
 
         # Run game loop
         steps = 0
-        while self._game.state != GameState.over:
-            if max_steps and steps >= max_steps:
+        while game.state != GameState.over:
+            if max_steps is not None and steps >= max_steps:
                 break
 
             # Get observation and select action
-            obs = self._game.get_observation()
-            action = self._get_agent_action(obs)
-            action_name = self._get_action_name(action)
+            obs = game.get_observation()
+            action = agent.select_action(obs)
 
             # Execute action
-            result = action()
-
+            action()
             steps += 1
 
-            # Trigger game iteration to update state and print verbose output
-            self._game.iterate()
+            # Trigger game iteration to advance state
+            game.iterate()
 
             # Process any pending tk events to keep UI responsive
             root.update()
 
         # Get final result
-        final_obs = self._game.get_observation()
-        events = self._game.event_logger.get_log().events or []
+        final_obs = game.get_observation()
+        events: list[Any] = game.event_logger.get_log().events or []
 
         return GameResult(
             stats=final_obs.stats,
@@ -122,55 +133,13 @@ class AgentRunner:
             steps=steps,
         )
 
-    def _get_action_name(self, action) -> str:
-        """Get the name of an action for logging.
-
-        :param action: Action callable.
-        :returns: Name of the action.
-        """
-        action_map = {
-            self._agent_input.move_left: "MOVE_LEFT",
-            self._agent_input.move_right: "MOVE_RIGHT",
-            self._agent_input.rotate_cw: "ROTATE_CW",
-            self._agent_input.rotate_ccw: "ROTATE_CCW",
-            self._agent_input.soft_drop: "SOFT_DROP",
-        }
-        for name, func in action_map.items():
-            if action == func:
-                return name
-        return "UNKNOWN"
-
-    def _get_agent_action(self, obs: "GameObservation"):
-        """Get the next action from the agent.
-
-        :param obs: Current game observation.
-        :returns: Callable action.
-        """
-        if self._agent_class == "random":
-            return self._random_action()
-        raise ValueError(f"Unknown agent class: {self._agent_class}")
-
-    def _random_action(self):
-        """Get a random action.
-
-        :returns: Random action callable.
-        """
-        import random
-
-        actions = [
-            self._agent_input.move_left,
-            self._agent_input.move_right,
-            self._agent_input.rotate_cw,
-            self._agent_input.rotate_ccw,
-            self._agent_input.soft_drop,
-        ]
-        return random.choice(actions)
-
 
 class RandomAgent(InputHandler):
     """Simple random agent for testing.
 
     This agent selects random valid actions for testing purposes.
+
+    :attr _actions: List of action callables available to the agent.
     """
 
     def __init__(self, game: TetraTile) -> None:
@@ -179,10 +148,7 @@ class RandomAgent(InputHandler):
         :param game: Reference to the TetraTile game instance.
         """
         super().__init__(game)
-        import random
-
-        self._random = random
-        self._actions = [
+        self._actions: list[Callable[[], bool]] = [
             self.move_left,
             self.move_right,
             self.rotate_cw,
@@ -190,36 +156,64 @@ class RandomAgent(InputHandler):
             self.soft_drop,
         ]
 
+    def select_action(self, obs: GameObservation) -> Callable[[], bool]:
+        """Select a random action given the current observation.
+
+        :param obs: Current game observation (unused by random agent).
+        :returns: A callable action to execute.
+        """
+        return random.choice(self._actions)
+
     def move_left(self) -> bool:
-        return self._game._do_move_left()
+        """Move the current piece one step left.
+
+        :returns: True if move was successful.
+        """
+        return bool(self._game._do_move_left())
 
     def move_right(self) -> bool:
-        return self._game._do_move_right()
+        """Move the current piece one step right.
+
+        :returns: True if move was successful.
+        """
+        return bool(self._game._do_move_right())
 
     def rotate_cw(self) -> bool:
-        return self._game._do_rotate_cw()
+        """Rotate the current piece clockwise.
+
+        :returns: True if rotation was successful.
+        """
+        return bool(self._game._do_rotate_cw())
 
     def rotate_ccw(self) -> bool:
-        return self._game._do_rotate_ccw()
+        """Rotate the current piece counter-clockwise.
+
+        :returns: True if rotation was successful.
+        """
+        return bool(self._game._do_rotate_ccw())
 
     def soft_drop(self) -> bool:
-        return self._game._do_soft_drop()
+        """Move the current piece one step down (soft drop).
+
+        :returns: True if move was successful.
+        """
+        return bool(self._game._do_soft_drop())
 
     def hard_drop(self) -> None:
+        """Drop the current piece to the bottom immediately."""
         self._game._do_hard_drop()
 
     def move_left_max(self) -> None:
+        """Move the current piece to the left edge (max translation)."""
         self._game._do_move_left_max()
 
     def move_right_max(self) -> None:
+        """Move the current piece to the right edge (max translation)."""
         self._game._do_move_right_max()
 
     def toggle_pause(self) -> None:
-        pass  # Random agent doesn't pause
+        """Toggle the game pause state (no-op for random agent)."""
 
     def lock_piece(self) -> None:
+        """Lock the current piece in place without dropping."""
         self._game._do_lock_piece()
-
-
-# Import at bottom to avoid circular dependency
-from . import GameObservation, GameState

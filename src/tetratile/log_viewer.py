@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import datetime as dt
 import tkinter as tk
+from collections.abc import Callable
 from tkinter import ttk
 from typing import TYPE_CHECKING
-from collections.abc import Callable
 
 if TYPE_CHECKING:
     from .event_log import Event, EventLogger

@@ -28,7 +28,6 @@ class TestLeftWallRotation:
         piece.translate([2, 11], grid_with_left_wall)
 
         initial_count = len(piece.coords)
-        initial_coords = [c[:] for c in piece.coords]
 
         # Try to rotate
         result = piece.srs_rotate(1, grid_with_left_wall)

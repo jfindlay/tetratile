@@ -4,7 +4,17 @@ This module provides the human input handler that wraps existing
 tkinter key binding methods, implementing the InputHandler interface.
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from .input_handler import InputHandler
+
+if TYPE_CHECKING:
+    pass
+
+# Imported at bottom to avoid circular import
+from . import EigenTransformation, GameState, Transformation  # noqa: E402
 
 
 class HumanInputHandler(InputHandler):
@@ -21,7 +31,7 @@ class HumanInputHandler(InputHandler):
         :returns: True if move was successful.
         """
         if self._game.state == GameState.running:
-            return self._game.move_piece(Transformation(EigenTransformation.horizontal, -1))
+            return bool(self._game.move_piece(Transformation(EigenTransformation.horizontal, -1)))
         return False
 
     def move_right(self) -> bool:
@@ -30,7 +40,7 @@ class HumanInputHandler(InputHandler):
         :returns: True if move was successful.
         """
         if self._game.state == GameState.running:
-            return self._game.move_piece(Transformation(EigenTransformation.horizontal, 1))
+            return bool(self._game.move_piece(Transformation(EigenTransformation.horizontal, 1)))
         return False
 
     def rotate_cw(self) -> bool:
@@ -39,7 +49,7 @@ class HumanInputHandler(InputHandler):
         :returns: True if rotation was successful.
         """
         if self._game.state == GameState.running:
-            return self._game.move_piece(Transformation(EigenTransformation.rotation, 1))
+            return bool(self._game.move_piece(Transformation(EigenTransformation.rotation, 1)))
         return False
 
     def rotate_ccw(self) -> bool:
@@ -48,7 +58,7 @@ class HumanInputHandler(InputHandler):
         :returns: True if rotation was successful.
         """
         if self._game.state == GameState.running:
-            return self._game.move_piece(Transformation(EigenTransformation.rotation, -1))
+            return bool(self._game.move_piece(Transformation(EigenTransformation.rotation, -1)))
         return False
 
     def soft_drop(self) -> bool:
@@ -57,7 +67,7 @@ class HumanInputHandler(InputHandler):
         :returns: True if move was successful.
         """
         if self._game.state == GameState.running:
-            return self._game.move_piece(Transformation(EigenTransformation.vertical, 1))
+            return bool(self._game.move_piece(Transformation(EigenTransformation.vertical, 1)))
         return False
 
     def hard_drop(self) -> None:
@@ -80,13 +90,9 @@ class HumanInputHandler(InputHandler):
 
     def toggle_pause(self) -> None:
         """Toggle the game pause state."""
-        self._game.toggle_pause(None)
+        self._game.pause(None)
 
     def lock_piece(self) -> None:
         """Lock the current piece in place without dropping."""
         if self._game.state == GameState.running and self._game.piece is not None:
             self._game._do_lock_piece()
-
-
-# Import at bottom to avoid circular dependency
-from . import GameState, Transformation, EigenTransformation

@@ -7,8 +7,7 @@ and AI agent to observe the game state simultaneously.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from . import GameObservation, TetraTile
@@ -22,14 +21,14 @@ class OutputHandler(ABC):
     """
 
     @abstractmethod
-    def get_observation(self) -> "GameObservation":
+    def get_observation(self) -> GameObservation:
         """Get current game state observation.
 
         :returns: Current GameObservation.
         """
 
     @abstractmethod
-    def get_events_since(self, after_index: int) -> list:
+    def get_events_since(self, after_index: int) -> list[Any]:
         """Get events since the given index.
 
         :param after_index: Index to get events after.
@@ -43,7 +42,7 @@ class AgentOutputHandler(OutputHandler):
     Provides Python API access to game state for AI agents.
     """
 
-    def __init__(self, game: "TetraTile") -> None:
+    def __init__(self, game: TetraTile) -> None:
         """Initialize the output handler.
 
         :param game: Reference to the TetraTile game instance.
@@ -51,14 +50,14 @@ class AgentOutputHandler(OutputHandler):
         self._game = game
         self._event_index = 0
 
-    def get_observation(self) -> "GameObservation":
+    def get_observation(self) -> GameObservation:
         """Get current game state observation.
 
         :returns: Current GameObservation.
         """
         return self._game.get_observation()
 
-    def get_events_since(self, after_index: int) -> list:
+    def get_events_since(self, after_index: int) -> list[Any]:
         """Get events since the given index.
 
         :param after_index: Index to get events after.

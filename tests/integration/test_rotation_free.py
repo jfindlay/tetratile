@@ -8,7 +8,7 @@ import copy
 
 import pytest
 
-from tetratile import Grid, Tetromino, tetrominoes
+from tetratile import Grid, tetrominoes
 
 
 class TestFreeRotationCW:

@@ -20,35 +20,35 @@ class AgentInputHandler(InputHandler):
 
         :returns: True if move was successful.
         """
-        return self._game._do_move_left()
+        return bool(self._game._do_move_left())
 
     def move_right(self) -> bool:
         """Move the current piece one step right.
 
         :returns: True if move was successful.
         """
-        return self._game._do_move_right()
+        return bool(self._game._do_move_right())
 
     def rotate_cw(self) -> bool:
         """Rotate the current piece clockwise.
 
         :returns: True if rotation was successful.
         """
-        return self._game._do_rotate_cw()
+        return bool(self._game._do_rotate_cw())
 
     def rotate_ccw(self) -> bool:
         """Rotate the current piece counter-clockwise.
 
         :returns: True if rotation was successful.
         """
-        return self._game._do_rotate_ccw()
+        return bool(self._game._do_rotate_ccw())
 
     def soft_drop(self) -> bool:
         """Move the current piece one step down (soft drop).
 
         :returns: True if move was successful.
         """
-        return self._game._do_soft_drop()
+        return bool(self._game._do_soft_drop())
 
     def hard_drop(self) -> None:
         """Drop the current piece to the bottom immediately."""

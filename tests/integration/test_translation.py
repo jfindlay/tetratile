@@ -8,7 +8,7 @@ import copy
 
 import pytest
 
-from tetratile import Grid, tetrominoes
+from tetratile import EigenTransformation, Grid, Transformation, tetrominoes
 
 
 class TestHorizontalMovement:
@@ -47,7 +47,7 @@ class TestHorizontalMovement:
         piece.translate([1, 11], grid)
 
         # Move left - should either succeed or fail, but coordinates must stay valid
-        result = piece.translate([-1, 0], grid)
+        piece.translate([-1, 0], grid)
 
         # Verify all coords are within valid grid range (can extend slightly for wide pieces)
         for coord in piece.coords:
@@ -105,10 +105,7 @@ class TestMaxTranslation:
         piece = copy.deepcopy(tetrominoes[piece_idx])
         piece.translate([8, 11], grid)
 
-        result = piece.transform(
-            type("Transformation", (), {"eigentransformation": type("Eigen", (), {"min": 6})(), "multiple": -1})(),
-            grid,
-        )
+        piece.transform(Transformation(EigenTransformation.min), grid)
 
         # Should reach or get close to left edge
         min_x = min(c[0] for c in piece.coords)
@@ -120,10 +117,7 @@ class TestMaxTranslation:
         piece = copy.deepcopy(tetrominoes[piece_idx])
         piece.translate([1, 11], grid)
 
-        result = piece.transform(
-            type("Transformation", (), {"eigentransformation": type("Eigen", (), {"max": 7})(), "multiple": 1})(),
-            grid,
-        )
+        piece.transform(Transformation(EigenTransformation.max), grid)
 
         max_x = max(c[0] for c in piece.coords)
         assert max_x < grid.width
