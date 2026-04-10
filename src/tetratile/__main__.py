@@ -1,25 +1,50 @@
-"""Entry point for python -m tetratile."""
+"""Entry point for ``python -m tetratile``.
+
+CLI flags
+---------
+``--agent [CLASS]``
+    Run with agent input.  ``CLASS`` defaults to ``"random"``.
+    Without ``--agent`` a human plays via keyboard.
+
+``--observe``
+    Attach a :class:`.PrintObserver` that prints the board to stdout after
+    each gravity tick.  Works for both human and agent games.
+
+Board / game options
+--------------------
+``-s WxH``, ``-a SCALE``, ``-r RATE``, ``-o`` (constant rate), ``-c DIR``
+    Standard game configuration overrides.
+
+Mode matrix
+-----------
+==========  =========  ============================================
+``--agent`` ``--obs``  Behaviour
+==========  =========  ============================================
+no          no         Human plays, GUI visible, no stdout output.
+no          yes        Human plays, GUI visible, stdout observer.
+yes         no         Agent plays, GUI visible (human watches).
+yes         yes        Agent plays, GUI visible + stdout observer.
+==========  =========  ============================================
+"""
 
 import argparse
-import code
-import contextlib
 import importlib.metadata
-import sys
 import tkinter as tk
 from pathlib import Path
 
 from . import TetraTile
 from .agent_runner import AgentRunner
 from .config import GameConfig
-from .input_agent import AgentInputHandler
+from .input_human import HumanInputHandler
+from .output import PrintObserver
 
 _VERSION: str = importlib.metadata.version("tetratile")
 
 
-def main() -> int:
-    """Execute the game.
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the argument parser.
 
-    :returns: Exit code (0 for success).
+    :returns: Configured :class:`argparse.ArgumentParser`.
     """
     parser = argparse.ArgumentParser(
         description="Polyomino tessellation game",
@@ -34,39 +59,35 @@ def main() -> int:
         help="Board size WxH",
     )
     parser.add_argument("-a", "--scale", type=int, help="Board scale pixels/block")
-    parser.add_argument("-r", "--initial-rate", type=float, help="Initial rate blocks/second")
+    parser.add_argument("-r", "--initial-rate", type=float, help="Initial fall rate blocks/second")
     parser.add_argument("-o", "--constant", action="store_true", help="Do not increase game rate")
 
-    # Agent mode options
     parser.add_argument(
         "--agent",
-        action="store_true",
-        help="Run with agent input and output (single flag for agent mode)",
+        metavar="CLASS",
+        nargs="?",
+        const="random",
+        default=None,
+        help="Run with agent input; CLASS defaults to 'random'",
     )
     parser.add_argument(
-        "--agent-class",
-        default="random",
-        help="Agent class to use (e.g., random, greedy)",
-    )
-    parser.add_argument(
-        "--verbose",
+        "--observe",
         action="store_true",
-        help="Output game state to stdout after each iteration",
+        help="Attach a stdout observer (prints board after each tick)",
     )
-    parser.add_argument(
-        "--no-gui",
-        action="store_true",
-        help="Run headless (agent input only, no GUI)",
-    )
-    parser.add_argument(
-        "--repl",
-        action="store_true",
-        help="Run in interactive REPL mode for direct control",
-    )
+    return parser
 
-    args = parser.parse_args()
 
-    config = GameConfig.from_file(Path(args.config_file) if args.config_file else Path.cwd(), create_default=True)
+def _load_config(args: argparse.Namespace) -> GameConfig:
+    """Build :class:`.GameConfig` from CLI args.
+
+    :param args: Parsed command-line arguments.
+    :returns: Populated :class:`.GameConfig`.
+    """
+    config = GameConfig.from_file(
+        Path(args.config_file) if args.config_file else Path.cwd(),
+        create_default=True,
+    )
     if args.size is not None:
         config.board.width = args.size["width"]
         config.board.height = args.size["height"]
@@ -76,56 +97,42 @@ def main() -> int:
         config.initial_rate = args.initial_rate
     if args.constant:
         config.constant = args.constant
+    return config
 
-    # Handle REPL mode
-    if args.repl:
-        root = tk.Tk(className="tetratile-repl")
-        root.withdraw()
-        game = TetraTile(config, master=root)
-        game.set_input_handler(AgentInputHandler(game))
-        game.set_verbose_output(True)
-        game._print_game_state()
-        print("\n=== REPL MODE ===")
-        print("Available commands:")
-        print("  game.move_left()    - move piece left")
-        print("  game.move_right()   - move piece right")
-        print("  game.rotate_cw()    - rotate clockwise")
-        print("  game.rotate_ccw()   - rotate counter-clockwise")
-        print("  game.soft_drop()    - soft drop")
-        print("  game.hard_drop()    - hard drop")
-        print("  game.lock_piece()   - lock piece in place")
-        print("  game.print_board()  - print current board")
-        print("  game.iterate()      - advance game state")
-        print("  game.quit           - exit REPL")
-        print("\nExample: game.soft_drop()")
-        print("-" * 40)
 
-        class GameConsole(code.InteractiveConsole):
-            """Interactive console with a game.quit shortcut."""
+def _create_agent(class_name: str) -> "Agent":  # type: ignore[name-defined]  # noqa: F821
+    """Instantiate an agent by class name.
 
-            def push(self, line: str) -> bool:
-                """Push a line of source text to the interpreter.
+    :param class_name: Registered agent class name (e.g. ``"random"``).
+    :returns: :class:`.Agent` instance.
+    :raises ValueError: If ``class_name`` is not recognized.
+    """
+    from .agent import RandomAgent
 
-                :param line: Source line to execute.
-                :returns: True if more input is required.
-                """
-                if line.strip() == "game.quit":
-                    print("Goodbye!")
-                    sys.exit(0)
-                return super().push(line)
+    registry: dict[str, type] = {
+        "random": RandomAgent,
+    }
+    if class_name not in registry:
+        raise ValueError(f"Unknown agent class '{class_name}'. Available: {sorted(registry)}")
+    return registry[class_name]()
 
-        console = GameConsole({"game": game})
-        with contextlib.suppress(SystemExit):
-            console.interact(banner="")
-        return 0
 
-    # Handle agent mode
-    if args.agent or args.no_gui:
-        # Headless agent mode
+def main() -> int:
+    """Execute the game.
+
+    :returns: Exit code (0 for success).
+    """
+    args = _build_parser().parse_args()
+    config = _load_config(args)
+
+    if args.agent is not None:
+        # Agent plays
+        agent = _create_agent(args.agent)
         runner = AgentRunner(
             config=config,
-            agent_class=args.agent_class,
-            verbose=args.verbose,
+            agent=agent,
+            show_gui=True,
+            observe=args.observe,
         )
         result = runner.run()
         print("\n=== GAME OVER ===")
@@ -133,22 +140,16 @@ def main() -> int:
         print(f"Stats: {result.stats}")
         return 0
 
-    # Normal GUI mode
+    # Human plays
     try:
-        game = TetraTile(config, master=tk.Tk(className="tetratile"))
-
-        # Set up agent input if requested
-        if args.agent:
-            agent_input = AgentInputHandler(game)
-            game.set_input_handler(agent_input)
-
-        # Enable verbose output if requested
-        if args.verbose:
-            game.set_verbose_output(True)
-
+        root = tk.Tk(className="tetratile")
+        game = TetraTile(config, master=root)
+        game.set_input_handler(HumanInputHandler(game))
+        if args.observe:
+            game.add_output_handler(PrintObserver())
         game.mainloop()
     except KeyboardInterrupt:
-        return 0
+        pass
     return 0
 
 

@@ -1,76 +1,109 @@
-"""Output handler for game observation.
+"""Output handlers for game observation.
 
-This module provides output handlers that allow both human GUI
-and AI agent to observe the game state simultaneously.
+Output handlers receive push notifications from :class:`.TetraTile` after
+each game tick via :meth:`OutputHandler.on_observation`.  Multiple handlers
+can be registered simultaneously using
+:meth:`.TetraTile.add_output_handler`, so a human-watching-agent scenario
+simply registers a :class:`PrintObserver` alongside the running game.
+
+Provided implementations:
+
+* :class:`AgentOutputHandler` — stores the latest observation for polling by
+  an :class:`.AgentRunner`.
+* :class:`PrintObserver` — prints a human-readable board snapshot to stdout
+  after each tick.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from . import GameObservation, TetraTile
+    from . import GameObservation
 
 
 class OutputHandler(ABC):
-    """Abstract interface for game output (observation).
+    """Abstract push-notification interface for game observation.
 
-    Output handlers observe the game state without affecting gameplay.
-    Both human GUI and AI agent can observe simultaneously.
+    Registered with :meth:`.TetraTile.add_output_handler`.  Called after
+    every :meth:`.TetraTile.iterate` tick with a fresh
+    :class:`.GameObservation` snapshot.
     """
 
     @abstractmethod
-    def get_observation(self) -> GameObservation:
-        """Get current game state observation.
+    def on_observation(self, obs: GameObservation) -> None:
+        """Receive a game state snapshot.
 
-        :returns: Current GameObservation.
-        """
-
-    @abstractmethod
-    def get_events_since(self, after_index: int) -> list[Any]:
-        """Get events since the given index.
-
-        :param after_index: Index to get events after.
-        :returns: List of events.
+        :param obs: Current :class:`.GameObservation`.
         """
 
 
 class AgentOutputHandler(OutputHandler):
-    """Output handler for AI agent observation.
+    """Output handler that stores the latest observation for agent polling.
 
-    Provides Python API access to game state for AI agents.
+    Register with :meth:`.TetraTile.add_output_handler` to keep a
+    continuously-updated snapshot; retrieve it with :meth:`get_latest`.
+
+    :attr _latest: Most recent :class:`.GameObservation` received, or
+        ``None`` before the first tick.
     """
 
-    def __init__(self, game: TetraTile) -> None:
-        """Initialize the output handler.
+    def __init__(self) -> None:
+        """Initialize with no stored observation."""
+        self._latest: GameObservation | None = None
 
-        :param game: Reference to the TetraTile game instance.
+    def on_observation(self, obs: GameObservation) -> None:
+        """Store the latest observation.
+
+        :param obs: Current :class:`.GameObservation`.
         """
-        self._game = game
-        self._event_index = 0
+        self._latest = obs
 
-    def get_observation(self) -> GameObservation:
-        """Get current game state observation.
+    def get_latest(self) -> GameObservation | None:
+        """Return the most recently stored observation.
 
-        :returns: Current GameObservation.
+        :returns: Latest :class:`.GameObservation`, or ``None`` if not yet
+            received.
         """
-        return self._game.get_observation()
+        return self._latest
 
-    def get_events_since(self, after_index: int) -> list[Any]:
-        """Get events since the given index.
 
-        :param after_index: Index to get events after.
-        :returns: List of events.
+class PrintObserver(OutputHandler):
+    """Output handler that prints a human-readable game snapshot to stdout.
+
+    Attach with :meth:`.TetraTile.add_output_handler` to enable verbose
+    output (replaces the old ``--verbose`` / ``set_verbose_output`` approach).
+    Prints after every :meth:`.TetraTile.iterate` tick.
+    """
+
+    def on_observation(self, obs: GameObservation) -> None:
+        """Print the current board state and statistics.
+
+        :param obs: Current :class:`.GameObservation`.
         """
-        events = self._game.event_logger.get_log().events or []
-        return events[after_index:]
+        elapsed = obs.elapsed
+        elapsed_secs = elapsed.total_seconds()
 
-    def reset_event_index(self) -> None:
-        """Reset the event index to start from beginning."""
-        self._event_index = 0
+        print("=" * 40)
+        print(f"STATE: {obs.state}")
+        print(f"Piece: {obs.current_piece or 'None'} (state={obs.current_piece_state})")
+        print(f"Next:  {obs.next_piece or 'None'}")
+        print(f"Rows cleared: {obs.stats.get('rows_cleared', 0)}")
+        print(f"Pieces: {obs.stats.get('pieces', 0)}")
+        print(f"Time: {elapsed_secs:.1f}s")
+        print()
 
-    @property
-    def event_index(self) -> int:
-        """Get current event index."""
-        return self._event_index
+        # Print board: y=height-1 at top, y=0 at bottom (row-major obs.board[y][x])
+        height = len(obs.board)
+        width = len(obs.board[0]) if height else 0
+        digits = len(str(height))
+        row_fmt = f"{{:0{digits}}}"
+        print(digits * " " + "+" + 2 * width * "-" + "+")
+        for y in range(height - 1, -1, -1):
+            row = obs.board[y]
+            row_image = "".join(("  " if cell is None else (cell * 2 if len(cell) == 1 else cell[:2])) for cell in row)
+            print(row_fmt.format(height - 1 - y) + "|" + row_image + "|")
+        print(digits * " " + "+" + 2 * width * "-" + "+")
+        print("=" * 40)
+        print()

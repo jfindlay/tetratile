@@ -1,7 +1,10 @@
-"""Agent input handler for game control.
+"""Agent input handler for programmatic game control.
 
-This module provides the agent input handler that exposes a Python API
-for AI agents to control the game, implementing the InputHandler interface.
+Provides the :class:`AgentInputHandler` frontend, used when an AI agent
+controls the game.  All behaviour is inherited from :class:`.InputHandler`;
+this subclass exists as a named entry point so that
+``isinstance(handler, AgentInputHandler)`` can distinguish the agent frontend
+from the human frontend.
 """
 
 from .input_handler import InputHandler
@@ -10,62 +13,7 @@ from .input_handler import InputHandler
 class AgentInputHandler(InputHandler):
     """Input handler for AI agent control via Python API.
 
-    Provides a clean Python API for AI agents to interact with the game,
-    implementing the same InputHandler interface as HumanInputHandler to
-    ensure identical game behavior.
+    Inherits all game actions from :class:`.InputHandler`.  An
+    :class:`.AgentRunner` calls these methods directly in response to
+    :class:`.Action` values returned by an :class:`.Agent`.
     """
-
-    def move_left(self) -> bool:
-        """Move the current piece one step left.
-
-        :returns: True if move was successful.
-        """
-        return bool(self._game._do_move_left())
-
-    def move_right(self) -> bool:
-        """Move the current piece one step right.
-
-        :returns: True if move was successful.
-        """
-        return bool(self._game._do_move_right())
-
-    def rotate_cw(self) -> bool:
-        """Rotate the current piece clockwise.
-
-        :returns: True if rotation was successful.
-        """
-        return bool(self._game._do_rotate_cw())
-
-    def rotate_ccw(self) -> bool:
-        """Rotate the current piece counter-clockwise.
-
-        :returns: True if rotation was successful.
-        """
-        return bool(self._game._do_rotate_ccw())
-
-    def soft_drop(self) -> bool:
-        """Move the current piece one step down (soft drop).
-
-        :returns: True if move was successful.
-        """
-        return bool(self._game._do_soft_drop())
-
-    def hard_drop(self) -> None:
-        """Drop the current piece to the bottom immediately."""
-        self._game._do_hard_drop()
-
-    def move_left_max(self) -> None:
-        """Move the current piece to the left edge (max translation)."""
-        self._game._do_move_left_max()
-
-    def move_right_max(self) -> None:
-        """Move the current piece to the right edge (max translation)."""
-        self._game._do_move_right_max()
-
-    def toggle_pause(self) -> None:
-        """Toggle the game pause state."""
-        self._game._do_toggle_pause()
-
-    def lock_piece(self) -> None:
-        """Lock the current piece in place without dropping."""
-        self._game._do_lock_piece()

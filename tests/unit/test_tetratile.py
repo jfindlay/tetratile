@@ -84,18 +84,18 @@ class TestPolyomino:
         """Test Polyomino.min returns correct minimum coordinate."""
         ordinal: int = random.randint(2, 11)
         coords: list[list[int]] = [[random.randint(0, self.grid.height) for _i in range(2)] for _j in range(ordinal)]
-        p = Polyomino(dim=Dimension.D2, colors=Colors(), coords=coords)
+        p = Polyomino(dim=Dimension.Y, colors=Colors(), coords=coords)
 
-        for dim in (Dimension.D1, Dimension.D2):
+        for dim in (Dimension.X, Dimension.Y):
             assert p.min(dim) == min([c[dim.value - 1] for c in coords])
 
     def test_max(self) -> None:
         """Test Polyomino.max returns correct maximum coordinate."""
         ordinal: int = random.randint(2, 11)
         coords: list[list[int]] = [[random.randint(0, self.grid.height) for _i in range(2)] for _j in range(ordinal)]
-        p = Polyomino(dim=Dimension.D2, colors=Colors(), coords=coords)
+        p = Polyomino(dim=Dimension.Y, colors=Colors(), coords=coords)
 
-        for dim in (Dimension.D1, Dimension.D2):
+        for dim in (Dimension.X, Dimension.Y):
             assert p.max(dim) == max([c[dim.value - 1] for c in coords])
 
     def test_rotate(self) -> None:
@@ -142,11 +142,11 @@ class TestPolyomino:
                 tetromino.translate(t, self.grid)
                 assert coords == tetromino.coords
                 if translation == EigenTransformation.min:
-                    assert tetromino.min(Dimension.D1) == 0
+                    assert tetromino.min(Dimension.X) == 0
                 if translation == EigenTransformation.max:
-                    assert self.grid.width == tetromino.max(Dimension.D1) + 1
+                    assert self.grid.width == tetromino.max(Dimension.X) + 1
                 if translation == EigenTransformation.bottom:
-                    assert tetromino.min(Dimension.D2) == 0
+                    assert tetromino.min(Dimension.Y) == 0
 
 
 class TestGrid:
@@ -284,23 +284,23 @@ class TestPolyominoTransform:
         """Test transform dispatches to translate for horizontal."""
         tetromino = copy.deepcopy(tetrominoes[3])
         tetromino.translate([self.grid.width // 2, self.grid.height // 2], self.grid)
-        original_min = tetromino.min(Dimension.D1)
+        original_min = tetromino.min(Dimension.X)
 
         result = tetromino.transform(Transformation(EigenTransformation.horizontal, 1), self.grid)
 
         assert result is True
-        assert tetromino.min(Dimension.D1) == original_min + 1
+        assert tetromino.min(Dimension.X) == original_min + 1
 
     def test_transform_vertical(self) -> None:
         """Test transform dispatches to translate for vertical."""
         tetromino = copy.deepcopy(tetrominoes[3])
         tetromino.translate([self.grid.width // 2, self.grid.height // 2], self.grid)
-        original_min = tetromino.min(Dimension.D2)
+        original_min = tetromino.min(Dimension.Y)
 
         result = tetromino.transform(Transformation(EigenTransformation.vertical, 1), self.grid)
 
         assert result is True
-        assert tetromino.min(Dimension.D2) == original_min - 1
+        assert tetromino.min(Dimension.Y) == original_min - 1
 
     def test_transform_min(self) -> None:
         """Test transform with min transformation."""
@@ -310,7 +310,7 @@ class TestPolyominoTransform:
         result = tetromino.transform(Transformation(EigenTransformation.min), self.grid)
 
         assert result is True
-        assert tetromino.min(Dimension.D1) == 0
+        assert tetromino.min(Dimension.X) == 0
 
     def test_transform_max(self) -> None:
         """Test transform with max transformation."""
@@ -320,7 +320,7 @@ class TestPolyominoTransform:
         result = tetromino.transform(Transformation(EigenTransformation.max), self.grid)
 
         assert result is True
-        assert tetromino.max(Dimension.D1) == self.grid.width - 1
+        assert tetromino.max(Dimension.X) == self.grid.width - 1
 
     def test_transform_bottom(self) -> None:
         """Test transform with bottom transformation."""
@@ -330,7 +330,7 @@ class TestPolyominoTransform:
         result = tetromino.transform(Transformation(EigenTransformation.bottom), self.grid)
 
         assert result is True
-        assert tetromino.min(Dimension.D2) == 0
+        assert tetromino.min(Dimension.Y) == 0
 
 
 class TestPolyominoGetTranslation:

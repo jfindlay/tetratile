@@ -29,16 +29,20 @@ _VERSION: str = importlib.metadata.version("tetratile")
 
 
 class Dimension(enum.IntEnum):
-    """Map cardinal cartesian products to integers.
+    """Map Cartesian coordinate axes to their index in a coordinate pair.
 
-    :attr D1: One-dimensional.
-    :attr D2: Two-dimensional (for polyominoes).
-    :attr D3: Three-dimensional (for polycubes).
+    Each value equals the 1-based index of the corresponding axis in an
+    ``[x, y, ...]`` coordinate pair, so ``coord[Dimension.X - 1]`` yields
+    the x component.
+
+    :attr X: The x axis (column); index 0 in ``[x, y]`` pairs.
+    :attr Y: The y axis (row); index 1 in ``[x, y]`` pairs.
+    :attr Z: The z axis (depth); index 2 in ``[x, y, z]`` triples (polycubes).
     """
 
-    D1 = 1
-    D2 = 2
-    D3 = 3
+    X = 1
+    Y = 2
+    Z = 3
 
 
 class EigenTransformation(enum.IntEnum):
@@ -106,9 +110,12 @@ class GameObservation:
     usable by both AI agents for decision-making and by human observers
     (including other frontends) for display purposes.
 
-    :attr board: 2D array of cell types (None for empty, tetromino name for occupied).
+    :attr board: Row-major 2D array; ``board[y][x]`` is the cell at column ``x``, row ``y``
+        (``y=0`` is the bottom row, ``y=height-1`` is the top).
+        Values are ``None`` for empty or the tetromino name string for occupied.
     :attr current_piece: Name of current falling piece (Z, S, l, T, o, L, J).
-    :attr current_piece_coords: List of [x, y] coordinates for current piece squares.
+    :attr current_piece_coords: List of ``[x, y]`` Cartesian coordinates for the
+        current piece's squares (``x=0`` is left, ``y=0`` is bottom).
     :attr current_piece_state: SRS rotation state (0-3).
     :attr next_piece: Name of next piece to spawn.
     :attr stats: Dictionary of game statistics.
@@ -567,12 +574,12 @@ def used_keys() -> list[str]:
 class Tetromino(Polyomino):
     """Base class for tetrominoes.
 
-    :attr dim: Always Dimension.D2 for tetrominoes.
+    :attr dim: Always Dimension.Y for tetrominoes (2D).
     :attr name: Single-letter identifier.
     :attr rotation_state: SRS rotation state (0-3).
     """
 
-    dim: Dimension = Dimension.D2
+    dim: Dimension = Dimension.Y
     name: str = ""
     rotation_state: int = 0
 
@@ -589,7 +596,7 @@ class Tetromino(Polyomino):
             self.colors = Colors(data.normal, data.light, data.dark)
             self.coords = [[int(v[0]), int(v[1])] for v in data.coords]
             self.o = [SRS_CENTERS.get(data.name, (D(0), D(0)))[0], SRS_CENTERS.get(data.name, (D(0), D(0)))[1]]
-        self.dim = Dimension.D2
+        self.dim = Dimension.Y
 
     def _get_kick_table(self) -> dict[tuple[int, int], list[tuple[int, int]]]:
         """Get the SRS kick table for this tetromino.
@@ -907,7 +914,7 @@ class Board(tk.Canvas):
             if len(row_coords) == self.width:
                 has_full_rows = True
                 row = Polyomino(
-                    dim=Dimension.D2,
+                    dim=Dimension.Y,
                     colors=self.full_row_colors,
                     coords=row_coords,
                     name="row",
@@ -931,7 +938,7 @@ class Board(tk.Canvas):
             ]
             if len(row_coords):
                 row = Polyomino(
-                    dim=Dimension.D2,
+                    dim=Dimension.Y,
                     colors=Colors(),
                     coords=row_coords,
                     name="row",
@@ -1088,7 +1095,7 @@ class TetraTile(tk.Frame):
 
         self._input_handler: InputHandler = HumanInputHandler(self)
         self._output_handlers: list[OutputHandler] = []
-        self._verbose_output: bool = False
+        self._manual_drive: bool = False
 
         self.add_piece()
         self.iterate_id = self._schedule(GameEvent.iterate)
@@ -1096,15 +1103,24 @@ class TetraTile(tk.Frame):
     def _schedule(self, game_event: GameEvent) -> str:
         """Schedule an asynchronous event.
 
+        When :attr:`_manual_drive` is ``True``, ``GameEvent.iterate`` is not
+        scheduled — the caller drives :meth:`iterate` directly — so this
+        returns a sentinel string and is otherwise a no-op for that event.
+        ``GameEvent.remove`` is always scheduled regardless of manual drive.
+
         :param game_event: The type of event to schedule.
-        :returns: Tkinter after callback ID.
+        :returns: Tkinter after callback ID (or ``"manual"`` sentinel).
         """
         if game_event == GameEvent.iterate:
+            if self._manual_drive:
+                return "manual"
             action = self.iterate
             rate = self.rate.get(raw=True)
         elif game_event == GameEvent.remove:
             action = self.remove_full_rows
             rate = self.rate.get(raw=True) * self._config.remove_freq
+        else:
+            return "manual"
 
         return self.master.after(int(1e3 / (float(rate) + self._config.epsilon)), action)
 
@@ -1315,193 +1331,100 @@ class TetraTile(tk.Frame):
         self.state = state
         self.state_name.set(state)
 
-    # Internal action methods - called by both human and agent handlers
-    def _do_move_left(self) -> bool:
-        """Internal implementation for move left.
+    # ------------------------------------------------------------------ #
+    # Input / output handler management                                    #
+    # ------------------------------------------------------------------ #
 
-        :returns: True if move was successful.
-        """
-        return self.move_piece(Transformation(EigenTransformation.horizontal, -1))
-
-    def _do_move_right(self) -> bool:
-        """Internal implementation for move right.
-
-        :returns: True if move was successful.
-        """
-        return self.move_piece(Transformation(EigenTransformation.horizontal, 1))
-
-    def _do_rotate_cw(self) -> bool:
-        """Internal implementation for clockwise rotation.
-
-        :returns: True if rotation was successful.
-        """
-        return self.move_piece(Transformation(EigenTransformation.rotation, 1))
-
-    def _do_rotate_ccw(self) -> bool:
-        """Internal implementation for counter-clockwise rotation.
-
-        :returns: True if rotation was successful.
-        """
-        return self.move_piece(Transformation(EigenTransformation.rotation, -1))
-
-    def _do_soft_drop(self) -> bool:
-        """Internal implementation for soft drop (one step down).
-
-        :returns: True if move was successful.
-        """
-        return self.move_piece(Transformation(EigenTransformation.vertical, 1))
-
-    def _do_hard_drop(self) -> None:
-        """Internal implementation for hard drop."""
-        while self.move_piece(Transformation(EigenTransformation.vertical, 1)):
-            pass
-
-    def _do_move_left_max(self) -> None:
-        """Internal implementation for move to left edge."""
-        while self.move_piece(Transformation(EigenTransformation.horizontal, -1)):
-            pass
-
-    def _do_move_right_max(self) -> None:
-        """Internal implementation for move to right edge."""
-        while self.move_piece(Transformation(EigenTransformation.horizontal, 1)):
-            pass
-
-    def _do_toggle_pause(self) -> None:
-        """Internal implementation for toggle pause."""
-        self.pause(None)
-
-    def _do_lock_piece(self) -> None:
-        """Internal implementation for lock piece without dropping."""
-        if self.piece is not None:
-            piece_type = self.piece.name
-            self._update_piece_on_board(clear=True)
-            self._update_piece_on_board(is_active=False)
-            match self._config.shadow:
-                case "shadow":
-                    if hasattr(self, "_shadow_coords"):
-                        for coord in getattr(self, "_shadow_coords", []):
-                            self.board.delete(f"shadow_{coord[0]}_{coord[1]}")
-                        self._shadow_coords = []
-            self._sync_logger_time()
-            self.event_logger.log(EventType.piece_lock, piece_type=piece_type)
-            if self.board.select_full_rows():
-                self._schedule(GameEvent.remove)
-            self.add_piece()
-
-    # Input handler management
     def set_input_handler(self, handler: "InputHandler") -> None:
-        """Set the input handler for game control.
+        """Replace the active input handler.
 
-        :param handler: InputHandler instance (HumanInputHandler or AgentInputHandler).
+        :param handler: New :class:`InputHandler` (human or agent).
         """
         self._input_handler = handler
 
     def get_input_handler(self) -> "InputHandler":
-        """Get the current input handler.
+        """Return the active input handler.
 
-        :returns: Current InputHandler instance.
+        :returns: Current :class:`InputHandler` instance.
         """
         return self._input_handler
 
-    # Convenience methods for direct control (REPL mode)
-    def move_left(self) -> bool:
-        """Move the current piece one step left.
+    def set_manual_drive(self, enabled: bool) -> None:
+        """Enable or disable manual drive mode.
 
-        :returns: True if move was successful.
+        When ``True``, ``_schedule(GameEvent.iterate)`` becomes a no-op so
+        the caller (e.g. :class:`AgentRunner`) drives :meth:`iterate` directly
+        without a competing Tk timer.
+
+        :param enabled: ``True`` to suppress automatic scheduling.
         """
-        return self._do_move_left()
+        self._manual_drive = enabled
 
-    def move_right(self) -> bool:
-        """Move the current piece one step right.
+    def add_output_handler(self, handler: "OutputHandler") -> None:
+        """Register an output observer.
 
-        :returns: True if move was successful.
+        Registered handlers receive :class:`GameObservation` snapshots via
+        :meth:`OutputHandler.on_observation` after every :meth:`iterate` tick.
+
+        :param handler: :class:`OutputHandler` to register.
         """
-        return self._do_move_right()
+        self._output_handlers.append(handler)
 
-    def rotate_cw(self) -> bool:
-        """Rotate the current piece clockwise.
+    def remove_output_handler(self, handler: "OutputHandler") -> None:
+        """Unregister an output observer.
 
-        :returns: True if rotation was successful.
+        :param handler: :class:`OutputHandler` to remove.
         """
-        return self._do_rotate_cw()
+        self._output_handlers.remove(handler)
 
-    def rotate_ccw(self) -> bool:
-        """Rotate the current piece counter-clockwise.
+    def _notify_observers(self) -> None:
+        """Push the current observation to all registered output handlers."""
+        if not self._output_handlers:
+            return
+        obs = self.get_observation()
+        for h in self._output_handlers:
+            h.on_observation(obs)
 
-        :returns: True if rotation was successful.
-        """
-        return self._do_rotate_ccw()
-
-    def soft_drop(self) -> bool:
-        """Move the current piece one step down (soft drop).
-
-        :returns: True if move was successful.
-        """
-        return self._do_soft_drop()
-
-    def hard_drop(self) -> None:
-        """Drop the current piece to the bottom immediately."""
-        self._do_hard_drop()
-
-    def move_left_max(self) -> None:
-        """Move the current piece to the left edge (max translation)."""
-        self._do_move_left_max()
-
-    def move_right_max(self) -> None:
-        """Move the current piece to the right edge (max translation)."""
-        self._do_move_right_max()
+    # ------------------------------------------------------------------ #
+    # Canonical piece actions (called by InputHandler and iterate())       #
+    # ------------------------------------------------------------------ #
 
     def lock_piece(self) -> None:
-        """Lock the current piece in place without dropping."""
-        self._do_lock_piece()
+        """Lock the current piece in place without dropping.
 
-    def print_board(self) -> None:
-        """Print current board state to stdout."""
-        self.board._game_grid.print()
-
-    def get_stats(self) -> dict[str, typing.Any]:
-        """Get current game statistics.
-
-        :returns: Dictionary with pieces, rows_cleared, rows_by_count, pieces_by_type.
+        No-op when the game is not :attr:`GameState.running` or no piece
+        is active.  This is the single canonical lock implementation used
+        by both :class:`HumanInputHandler` and :class:`AgentInputHandler`.
         """
-        return self._get_stats()
-
-    def set_verbose_output(self, enabled: bool) -> None:
-        """Enable or disable verbose terminal output.
-
-        :param enabled: True to enable verbose output, False to disable.
-        """
-        self._verbose_output = enabled
-
-    def _print_game_state(self) -> None:
-        """Print current game state to stdout (for verbose/agent mode)."""
-        stats = self._get_stats()
-        elapsed_seconds = self.time_elapsed.get(as_seconds=True) or 0.0
-
-        print("=" * 40)
-        print(f"STATE: {self.state}")
-        piece_state = self.piece.rotation_state if isinstance(self.piece, Tetromino) else 0
-        print(f"Piece: {self.piece.name if self.piece else 'None'} (state={piece_state})")
-        print(f"Next: {self.next_piece.name if self.next_piece else 'None'}")
-        print(f"Rows cleared: {self.removed_total.get()}")
-        print(f"Pieces: {stats.get('pieces', 0)}")
-        print(f"Time: {elapsed_seconds:.1f}s")
-        print()
-        self.board._game_grid.print()
-        print("=" * 40)
-        print()
+        if self.state != GameState.running or self.piece is None:
+            return
+        piece_type = self.piece.name
+        self._update_piece_on_board(clear=True)
+        self._update_piece_on_board(is_active=False)
+        match self._config.shadow:
+            case "shadow":
+                if hasattr(self, "_shadow_coords"):
+                    for coord in getattr(self, "_shadow_coords", []):
+                        self.board.delete(f"shadow_{coord[0]}_{coord[1]}")
+                    self._shadow_coords = []
+        self._sync_logger_time()
+        self.event_logger.log(EventType.piece_lock, piece_type=piece_type)
+        if self.board.select_full_rows():
+            self._schedule(GameEvent.remove)
+        self.add_piece()
 
     def get_observation(self) -> "GameObservation":
         """Get current game state for observation (AI agent or human observer).
 
         :returns: GameObservation with current board state, pieces, and stats.
         """
-        # Build board state as 2D array
-        board_state: list[list[str | None]] = [[None for _ in range(self.board.height)] for _ in range(self.board.width)]
-        for y in range(self.board.height):
-            for x in range(self.board.width):
+        # Build row-major board: board_state[y][x], y=0 is bottom row
+        width, height = self.board.width, self.board.height
+        board_state: list[list[str | None]] = [[None] * width for _ in range(height)]
+        for y in range(height):
+            for x in range(width):
                 if self.board._game_grid[x, y].type:
-                    board_state[x][y] = self.board._game_grid[x, y].type
+                    board_state[y][x] = self.board._game_grid[x, y].type
 
         elapsed_secs = float(self.time_elapsed.get(as_seconds=True) or 0.0)
         current_piece: Tetromino | None = self.piece if isinstance(self.piece, Tetromino) else None
@@ -1545,13 +1468,39 @@ class TetraTile(tk.Frame):
         path = self.event_logger.save()
         messagebox.showinfo("Log Saved", f"Event log saved to:\n{path}")
 
-    def setup_events(self) -> None:
-        """Respond to inputs and other game conditions.
+    # Maps KeysConfig field names to InputHandler method names.
+    _KEY_MAP: typing.ClassVar[dict[str, str]] = {
+        "pause": "toggle_pause",
+        "left": "move_left",
+        "right": "move_right",
+        "left_side": "move_left_max",
+        "right_side": "move_right_max",
+        "rotate_left": "rotate_ccw",
+        "rotate_right": "rotate_cw",
+        "down": "soft_drop",
+        "drop": "hard_drop",
+        "lock": "lock_piece",
+    }
 
-        Binds keyboard events to their handler methods.
+    def setup_events(self) -> None:
+        """Bind keyboard keys to input handler methods.
+
+        All key events are routed through the active ``_input_handler`` so
+        that swapping handlers (human ↔ agent) automatically changes who
+        controls the game.
         """
-        for name, key in self._config.keys.model_dump().items():
-            self.master.bind(key, getattr(self, name))
+
+        def _make_cb(method_name: str) -> typing.Callable[[tk.Event], None]:
+            """Create a tkinter callback that dispatches to the named handler method."""
+
+            def callback(event: tk.Event) -> None:  # noqa: ARG001
+                getattr(self._input_handler, method_name)()
+
+            return callback
+
+        for cfg_name, handler_method in self._KEY_MAP.items():
+            key = getattr(self._config.keys, cfg_name)
+            self.master.bind(key, _make_cb(handler_method))
 
     def pause(self, event: tk.Event | None = None) -> None:
         """Toggle pause state.
@@ -1578,94 +1527,6 @@ class TetraTile(tk.Frame):
             self._sync_logger_time()
             self.event_logger.log(EventType.game_resume)
             self.set_state(GameState.running)
-
-    def left(self, event: tk.Event) -> None:
-        """Translate the current piece one step left.
-
-        :param event: Tkinter event (unused).
-        """
-        if self.state == GameState.running:
-            self.move_piece(Transformation(EigenTransformation.horizontal, -1))
-
-    def right(self, event: tk.Event) -> None:
-        """Translate the current piece one step right.
-
-        :param event: Tkinter event (unused).
-        """
-        if self.state == GameState.running:
-            self.move_piece(Transformation(EigenTransformation.horizontal, 1))
-
-    def down(self, event: tk.Event) -> None:
-        """Translate the current piece one step down.
-
-        :param event: Tkinter event (unused).
-        """
-        if self.state == GameState.running:
-            self.move_piece(Transformation(EigenTransformation.vertical, 1))
-
-    def left_side(self, event: tk.Event) -> None:
-        """Translate the current piece to the left edge.
-
-        :param event: Tkinter event (unused).
-        """
-        if self.state == GameState.running:
-            while self.move_piece(Transformation(EigenTransformation.horizontal, -1)):
-                pass
-
-    def right_side(self, event: tk.Event) -> None:
-        """Translate the current piece to the right edge.
-
-        :param event: Tkinter event (unused).
-        """
-        if self.state == GameState.running:
-            while self.move_piece(Transformation(EigenTransformation.horizontal, 1)):
-                pass
-
-    def rotate_left(self, event: tk.Event) -> None:
-        """Rotate the current piece counterclockwise.
-
-        :param event: Tkinter event (unused).
-        """
-        if self.state == GameState.running:
-            self.move_piece(Transformation(EigenTransformation.rotation, -1))
-
-    def rotate_right(self, event: tk.Event) -> None:
-        """Rotate the current piece clockwise.
-
-        :param event: Tkinter event (unused).
-        """
-        if self.state == GameState.running:
-            self.move_piece(Transformation(EigenTransformation.rotation, 1))
-
-    def drop(self, event: tk.Event) -> None:
-        """Drop the current piece to the bottom.
-
-        :param event: Tkinter event (unused).
-        """
-        if self.state == GameState.running:
-            while self.move_piece(Transformation(EigenTransformation.vertical, 1)):
-                pass
-
-    def lock(self, event: tk.Event) -> None:
-        """Lock the current piece in place without dropping.
-
-        :param event: Tkinter event (unused).
-        """
-        if self.state == GameState.running and self.piece is not None:
-            piece_type = self.piece.name
-            self._update_piece_on_board(clear=True)
-            self._update_piece_on_board(is_active=False)
-            match self._config.shadow:
-                case "shadow":
-                    if hasattr(self, "_shadow_coords"):
-                        for coord in getattr(self, "_shadow_coords", []):
-                            self.board.delete(f"shadow_{coord[0]}_{coord[1]}")
-                        self._shadow_coords = []
-            self._sync_logger_time()
-            self.event_logger.log(EventType.piece_lock, piece_type=piece_type)
-            if self.board.select_full_rows():
-                self._schedule(GameEvent.remove)
-            self.add_piece()
 
     def restart(self) -> None:
         """Restart the game."""
@@ -1697,8 +1558,9 @@ class TetraTile(tk.Frame):
     def iterate(self) -> None:
         """Process one game cycle.
 
-        Moves the active piece down one row if possible,
-        handles row removal, and schedules the next iteration.
+        Applies gravity (moves the active piece down one row), locks it and
+        spawns the next piece if it cannot move, then notifies observers and
+        reschedules.
         """
         if self.state == GameState.paused:
             return
@@ -1708,8 +1570,7 @@ class TetraTile(tk.Frame):
             if self.board.select_full_rows():
                 self._schedule(GameEvent.remove)
             self.add_piece()
-        if self._verbose_output:
-            self._print_game_state()
+        self._notify_observers()
         if self.state == GameState.running:
             self._update_rates()
             self.iterate_id = self._schedule(GameEvent.iterate)
@@ -1744,7 +1605,7 @@ class TetraTile(tk.Frame):
         if piece.translate(
             [
                 self.board.width // 2 - self.preview_board.width // 2,
-                self.board.height - 1 - piece.max(Dimension.D2),
+                self.board.height - 1 - piece.max(Dimension.Y),
             ],
             self.board._game_grid,
         ):
@@ -1772,10 +1633,15 @@ class TetraTile(tk.Frame):
     def move_piece(self, transformation: Transformation) -> bool:
         """Move current piece according to the transformation requested.
 
+        Returns ``False`` immediately if the game is not :attr:`GameState.running`
+        or no piece is active.  This is the single canonical state guard for
+        all input actions.
+
         :param transformation: The transformation to apply.
         :returns: True if the move was successful.
         """
-        assert self.piece is not None
+        if self.state != GameState.running or self.piece is None:
+            return False
         self._update_piece_on_board(clear=True)
 
         if transformation.eigentransformation == EigenTransformation.rotation:
