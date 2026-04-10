@@ -5,11 +5,21 @@ instance.  It owns the Tk root, the game, the
 :class:`.AgentInputHandler` bridge, and optionally a
 :class:`.PrintObserver`.
 
-The runner takes over the gravity clock by calling
-:meth:`.TetraTile.set_manual_drive`, then drives
-:meth:`.TetraTile.iterate` directly.  This eliminates the double-step
-that would occur if the Tk timer *and* the runner loop both called
-``iterate`` on the same tick.
+The runner calls :meth:`.TetraTile.set_manual_drive` to suppress the Tk
+gravity timer, then drives :meth:`.TetraTile.iterate` directly.  This
+eliminates the **double-step race** that would occur if the Tk timer *and*
+the runner loop both called ``iterate`` concurrently.
+
+The action cycle per step is:
+
+1. ``obs = game.get_observation()`` — pull a :class:`.GameObservation` snapshot.
+2. ``action = agent.select_action(obs)`` — pure agent decision.
+3. ``getattr(handler, action)()`` — dispatch to the game via the
+   :class:`.AgentInputHandler` (values of :class:`.Action` equal
+   :class:`.InputHandler` method names).
+4. ``game.iterate()`` — advance one gravity tick.
+5. ``root.update()`` — process Tk events to keep GUI responsive (no-op if
+   headless).
 """
 
 from __future__ import annotations
@@ -31,11 +41,16 @@ from . import GameState, TetraTile  # noqa: E402
 
 @dataclass
 class GameResult:
-    """Summary of a completed game run.
+    """Summary of a completed agent game run.
 
-    :attr stats: Final game statistics dictionary.
-    :attr final_observation: :class:`.GameObservation` at game-over.
-    :attr steps: Number of agent actions executed.
+    Returned by :meth:`AgentRunner.run` when the game ends (either by
+    game-over or by reaching ``max_steps``).
+
+    :attr stats: Final game statistics (same dict as
+        :attr:`.GameObservation.stats`).
+    :attr final_observation: Complete :class:`.GameObservation` at the
+        terminal state.
+    :attr steps: Number of agent actions executed during the run.
     """
 
     stats: dict[str, Any]
@@ -46,10 +61,17 @@ class GameResult:
 class AgentRunner:
     """Run a :class:`.TetraTile` game driven by an :class:`.Agent`.
 
+    Owns the Tk root, the game, and the :class:`.AgentInputHandler` bridge.
+    Optionally registers a :class:`.PrintObserver` for stdout output.
+
+    When ``show_gui=True`` (default) the game window is visible so a human
+    can watch the agent play.  When ``show_gui=False`` the window is
+    withdrawn for headless use (e.g. training runs, CI).
+
     :attr _config: Game configuration.
-    :attr _agent: The decision-making agent.
-    :attr _show_gui: Whether to display the GUI (human can watch).
-    :attr _observe: Whether to attach a :class:`.PrintObserver` for stdout output.
+    :attr _agent: The :class:`.Agent` driving decisions.
+    :attr _show_gui: Whether the game window is visible.
+    :attr _observe: Whether to attach a :class:`.PrintObserver`.
     """
 
     def __init__(

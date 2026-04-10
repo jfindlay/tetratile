@@ -1,17 +1,21 @@
-"""Output handlers for game observation.
+"""Output handlers for game observation (push-notification model).
 
-Output handlers receive push notifications from :class:`.TetraTile` after
-each game tick via :meth:`OutputHandler.on_observation`.  Multiple handlers
-can be registered simultaneously using
-:meth:`.TetraTile.add_output_handler`, so a human-watching-agent scenario
-simply registers a :class:`PrintObserver` alongside the running game.
+After each gravity tick, :meth:`.TetraTile._notify_observers` calls
+:meth:`OutputHandler.on_observation` on all registered handlers with a fresh
+:class:`.GameObservation` snapshot.  Multiple handlers may be registered
+simultaneously: for example, a human watching an agent game can attach a
+:class:`PrintObserver` without any special mode switch.
+
+This is a **push** model: :class:`TetraTile` pushes observations out; handlers
+react.  Agents that need to *pull* a snapshot (e.g. in :class:`.AgentRunner`)
+call :meth:`.TetraTile.get_observation` directly.
 
 Provided implementations:
 
-* :class:`AgentOutputHandler` — stores the latest observation for polling by
-  an :class:`.AgentRunner`.
-* :class:`PrintObserver` — prints a human-readable board snapshot to stdout
-  after each tick.
+* :class:`AgentOutputHandler` — caches the latest observation for subsequent
+  polling via :meth:`AgentOutputHandler.get_latest`.
+* :class:`PrintObserver` — renders the board to stdout after each tick,
+  replacing the former ``--verbose`` / ``set_verbose_output`` mechanism.
 """
 
 from __future__ import annotations
@@ -26,9 +30,10 @@ if TYPE_CHECKING:
 class OutputHandler(ABC):
     """Abstract push-notification interface for game observation.
 
-    Registered with :meth:`.TetraTile.add_output_handler`.  Called after
-    every :meth:`.TetraTile.iterate` tick with a fresh
-    :class:`.GameObservation` snapshot.
+    Register with :meth:`.TetraTile.add_output_handler`.  Each registered
+    handler receives a fresh :class:`.GameObservation` snapshot via
+    :meth:`on_observation` after every :meth:`.TetraTile.iterate` gravity
+    tick.  The observation is read-only; handlers must not modify game state.
     """
 
     @abstractmethod
@@ -70,17 +75,22 @@ class AgentOutputHandler(OutputHandler):
 
 
 class PrintObserver(OutputHandler):
-    """Output handler that prints a human-readable game snapshot to stdout.
+    """Output handler that renders the game state to stdout after each tick.
 
     Attach with :meth:`.TetraTile.add_output_handler` to enable verbose
-    output (replaces the old ``--verbose`` / ``set_verbose_output`` approach).
-    Prints after every :meth:`.TetraTile.iterate` tick.
+    terminal output (replaces the former ``--verbose`` / ``set_verbose_output``
+    mechanism).  Renders after every :meth:`.TetraTile.iterate` gravity tick.
+
+    The board is printed top-to-bottom (``y = height - 1`` first), matching
+    visual intuition.  The underlying :attr:`.GameObservation.board` array is
+    row-major — ``board[y][x]`` with ``y=0`` at the bottom — so iteration is
+    reversed: ``for y in range(height - 1, -1, -1)``.
     """
 
     def on_observation(self, obs: GameObservation) -> None:
-        """Print the current board state and statistics.
+        """Render the current board, piece, and statistics to stdout.
 
-        :param obs: Current :class:`.GameObservation`.
+        :param obs: Current :class:`.GameObservation` snapshot.
         """
         elapsed = obs.elapsed
         elapsed_secs = elapsed.total_seconds()

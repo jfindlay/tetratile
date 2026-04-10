@@ -1,30 +1,48 @@
 """Entry point for ``python -m tetratile``.
 
+The two orthogonal CLI flags ``--agent`` and ``--observe`` choose **who
+plays** and **who watches**, respectively.  Either combination is valid:
+
+.. list-table:: Mode matrix
+   :header-rows: 1
+   :widths: 10 10 80
+
+   * - ``--agent``
+     - ``--observe``
+     - Behaviour
+   * - no
+     - no
+     - Human plays via keyboard; GUI visible; no stdout output.
+   * - no
+     - yes
+     - Human plays; GUI visible; :class:`.PrintObserver` on stdout.
+   * - yes
+     - no
+     - Agent plays; GUI visible so a human can watch.
+   * - yes
+     - yes
+     - Agent plays; GUI visible + :class:`.PrintObserver` on stdout.
+
+Both :class:`.HumanInputHandler` and :class:`.AgentInputHandler` are
+coequal frontends of the same :class:`.InputHandler` base class.  Keyboard
+events are bound to :class:`.InputHandler` methods via
+:meth:`.TetraTile.setup_events`; when an agent handler is active the same
+key bindings are present but simply route through the agent handler, which
+calls the same :meth:`.TetraTile.move_piece` path.
+
 CLI flags
 ---------
 ``--agent [CLASS]``
-    Run with agent input.  ``CLASS`` defaults to ``"random"``.
-    Without ``--agent`` a human plays via keyboard.
+    Drive the game with an :class:`.Agent`.  ``CLASS`` defaults to
+    ``"random"`` (:class:`.RandomAgent`).
 
 ``--observe``
-    Attach a :class:`.PrintObserver` that prints the board to stdout after
-    each gravity tick.  Works for both human and agent games.
+    Register a :class:`.PrintObserver` — prints the board state to stdout
+    after each gravity tick.  Works for both human and agent games.
 
-Board / game options
---------------------
-``-s WxH``, ``-a SCALE``, ``-r RATE``, ``-o`` (constant rate), ``-c DIR``
-    Standard game configuration overrides.
-
-Mode matrix
------------
-==========  =========  ============================================
-``--agent`` ``--obs``  Behaviour
-==========  =========  ============================================
-no          no         Human plays, GUI visible, no stdout output.
-no          yes        Human plays, GUI visible, stdout observer.
-yes         no         Agent plays, GUI visible (human watches).
-yes         yes        Agent plays, GUI visible + stdout observer.
-==========  =========  ============================================
+``-s WxH``, ``-a SCALE``, ``-r RATE``, ``-o``, ``-c DIR``
+    Standard game-configuration overrides (size, scale, rate, constant
+    rate, config-file directory).
 """
 
 import argparse

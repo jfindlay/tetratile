@@ -1,11 +1,18 @@
 # !/usr/bin/env python3
-"""Tetromino tessellation game.
+"""Tetromino tessellation game on the integer lattice :math:`\\mathbb{Z}^2`.
 
-A tetromino puzzle game where players stack falling tetromino pieces
-to form complete rows on the game board.
+The game operates on a finite rectangular sublattice
+:math:`\\mathcal{B} \\subset \\mathbb{Z}^2` (the board) using
+y-up Cartesian orientation.  Valid piece moves form the semidirect product
+:math:`G = \\mathbb{Z}^2 \rtimes C_4`, where :math:`\\mathbb{Z}^2` is the
+integer translation group and :math:`C_4 \\cong \\mathbb{Z}/4\\mathbb{Z}` is
+the cyclic group of quarter-turn rotations.
+
+See ``docs/mathematics.rst`` for the full mathematical treatment.
 
 :attr _VERSION: The version of the installed package.
-:attr tetrominoes: Tuple of all instantiated tetromino objects for the game.
+:attr tetrominoes: Tuple of all seven one-sided tetromino :class:`Polyomino`
+    instances, one per :class:`TetrominoType` member.
 """
 
 import copy
@@ -46,15 +53,42 @@ class Dimension(enum.IntEnum):
 
 
 class EigenTransformation(enum.IntEnum):
-    """Allowed eigentransformations of polyominos in the 2D lattice.
+    """Atomic generators of the transform group :math:`\\mathbb{Z}^2 \rtimes C_4`.
 
-    :attr identity: No transformation.
-    :attr rotation: Rotation by ±π/2.
-    :attr horizontal: Translation left or right.
-    :attr vertical: Translation up or down.
-    :attr min: Translate to left edge.
-    :attr max: Translate to right edge.
-    :attr bottom: Translate to bottom.
+    Each member names one irreducible move from which all valid piece
+    transformations are composed:
+
+    - :attr:`identity` is the group identity element.
+    - :attr:`rotation` generates :math:`C_4 \\cong \\mathbb{Z}/4\\mathbb{Z}`;
+      ``Transformation(rotation, +1)`` is one CW quarter-turn,
+      ``Transformation(rotation, -1)`` is one CCW quarter-turn.
+    - :attr:`horizontal` generates the :math:`e_x = (1,0)` direction of
+      :math:`\\mathbb{Z}^2`; ``multiple > 0`` is rightward.
+    - :attr:`vertical` generates a **downward** unit step by convention
+      (``multiple=+1`` maps to ``dy=-1`` in the y-up frame).  Gravity
+      therefore uses ``Transformation(vertical, 1)``.  This sign
+      convention is a deliberate gravity alignment and will be corrected
+      to the standard y-up sign in the planned refactor, where the
+      translation type :class:`Translation` ``(dx, dy)`` makes the
+      direction explicit with ``dy > 0`` meaning up.
+
+    The values :attr:`min`, :attr:`max`, :attr:`bottom` are **not**
+    eigentransformations in the group-theoretic sense; they are *derived*
+    operations that compute the supremum of the piece's orbit under a unit
+    generator (see :ref:`extremal-translations` in ``docs/mathematics.rst``
+    and :meth:`.InputHandler.move_left_max`).  They are retained here
+    temporarily for backward compatibility and are scheduled for removal;
+    they belong in :class:`.InputHandler`, not in this type.  The integer
+    gap at values 4–5 is a legacy artifact from a previous interface
+    version.
+
+    :attr identity: The group identity; no transformation applied.
+    :attr rotation: Generator of :math:`C_4`; one quarter-turn per multiple.
+    :attr horizontal: Generator of the :math:`e_x` direction; one step per multiple.
+    :attr vertical: Generator of the gravity direction; ``multiple=+1`` means one step down.
+    :attr min: Derived: translate to leftmost reachable position (orbit supremum under :math:`-e_x`).
+    :attr max: Derived: translate to rightmost reachable position (orbit supremum under :math:`+e_x`).
+    :attr bottom: Derived: translate to lowest reachable position (orbit supremum under :math:`-e_y`).
     """
 
     identity = 0
@@ -68,10 +102,30 @@ class EigenTransformation(enum.IntEnum):
 
 @dataclass
 class Transformation:
-    """A polyomino transformation as an eigentransformation scaled by an integer multiple.
+    """An element of the generating set of :math:`G = \\mathbb{Z}^2 \rtimes C_4`.
 
-    :attr eigentransformation: The type of transformation to apply.
-    :attr multiple: The number of times to apply the transformation.
+    A :class:`Transformation` pairs an :class:`EigenTransformation` (an
+    atomic generator) with an integral **multiple** that scales it.  The
+    term *multiple* rather than *magnitude* is deliberate: the scale factor
+    must be an integer because :math:`\\mathbb{Z}^2` admits only integer
+    displacements — real-valued scaling is not valid on the lattice.
+
+    Examples::
+
+        Transformation(EigenTransformation.rotation, 1)    # one CW quarter-turn
+        Transformation(EigenTransformation.horizontal, -1) # one step left
+        Transformation(EigenTransformation.vertical, 1)    # one step down (gravity)
+
+    In the planned refactor this dataclass is replaced by the richer union
+    type ``type EigenTransformation = Translation | Rotation`` (named tuple
+    types that embed both the direction and the multiple), which eliminates
+    the need for a separate wrapper.
+
+    :attr eigentransformation: The atomic generator to apply.
+    :attr multiple: Integral scale factor; sign encodes direction for
+        ``rotation`` (:math:`+1` = CW) and ``horizontal`` (:math:`+1` = right).
+        For ``vertical``, :math:`+1` maps to :math:`dy = -1` (downward) by
+        convention.  Ignored for ``min``, ``max``, ``bottom``.
     """
 
     eigentransformation: EigenTransformation
@@ -104,23 +158,36 @@ class GameEvent(enum.IntEnum):
 
 @dataclass
 class GameObservation:
-    """Game state observation for AI agents and human observers.
+    r"""Read-only snapshot of the game state for agents and human observers.
 
-    This dataclass provides a read-only snapshot of the current game state,
-    usable by both AI agents for decision-making and by human observers
-    (including other frontends) for display purposes.
+    Passed to every registered :class:`.OutputHandler` after each gravity
+    tick via :meth:`.TetraTile._notify_observers`.  Also returned directly
+    by :meth:`.TetraTile.get_observation` for agent polling.
 
-    :attr board: Row-major 2D array; ``board[y][x]`` is the cell at column ``x``, row ``y``
-        (``y=0`` is the bottom row, ``y=height-1`` is the top).
-        Values are ``None`` for empty or the tetromino name string for occupied.
-    :attr current_piece: Name of current falling piece (Z, S, l, T, o, L, J).
-    :attr current_piece_coords: List of ``[x, y]`` Cartesian coordinates for the
-        current piece's squares (``x=0`` is left, ``y=0`` is bottom).
-    :attr current_piece_state: SRS rotation state (0-3).
-    :attr next_piece: Name of next piece to spawn.
-    :attr stats: Dictionary of game statistics.
-    :attr state: Current game state (running, paused, over).
-    :attr elapsed: Elapsed game time as timedelta.
+    The board is encoded in **row-major** order — ``board[y][x]`` — with
+    ``y=0`` at the bottom row, matching the standard convention for numpy
+    arrays and machine-learning agent consumption.  Note the transposition
+    relative to Tkinter canvas coordinates (which are y-down).
+
+    The ``current_piece_coords`` list uses Cartesian :math:`(x, y)` pairs
+    (not row-major): ``x=0`` is the left column, ``y=0`` is the bottom row.
+    These are the same coordinates used throughout the game logic.
+
+    In the planned refactor this dataclass gains ``frozen=True`` to make
+    snapshots immutable.
+
+    :attr board: Row-major board; ``board[y][x]`` is ``None`` (empty) or
+        the tetromino name string (occupied).
+    :attr current_piece: Single-letter name of the currently falling piece,
+        or ``None`` between pieces.
+    :attr current_piece_coords: List of ``[x, y]`` Cartesian coordinates for
+        the current piece's squares.
+    :attr current_piece_state: SRS rotation state in :math:`\{0,1,2,3\}`;
+        corresponds to the position in :math:`C_4`.
+    :attr next_piece: Name of the next piece to spawn, or ``None``.
+    :attr stats: Dictionary of game statistics (pieces placed, rows cleared, etc.).
+    :attr state: Current :class:`GameState`.
+    :attr elapsed: Elapsed game time.
     """
 
     board: list[list[str | None]]
@@ -135,11 +202,16 @@ class GameObservation:
 
 @dataclass
 class Colors:
-    """Store color information used for displaying polyominos in the game.
+    """Rendering colors for a :class:`Polyomino`.
 
-    :attr normal: The primary color.
-    :attr light: The lighter color variant.
-    :attr dark: The darker color variant.
+    Three color variants (normal face, lighter bevel, darker bevel) give
+    each piece a distinct 3-D appearance.  In the planned refactor
+    :class:`Colors` becomes a ``NamedTuple`` for immutability and
+    hashability.
+
+    :attr normal: Primary face color (hex string, e.g. ``"#CC6666"``).
+    :attr light: Lighter bevel color for the highlight edge.
+    :attr dark: Darker bevel color for the shadow edge.
     """
 
     normal: str = ""
@@ -170,12 +242,30 @@ def mix_with_black(color: str, factor: float = 0.5) -> str:
 
 @dataclass
 class Square:
-    """An elemental unit of the grid.
+    """A unit cell of the :math:`\\mathbb{Z}^2` lattice together with its render state.
 
-    :attr colors: Colors for rendering the square.
-    :attr id: Tkinter canvas item ID.
-    :attr is_active: Whether the square is part of the active piece.
-    :attr type: Name of the tetromino occupying this square.
+    Mathematically, a :class:`Square` at coordinates :math:`(x, y)` is the
+    open unit cell :math:`(x, x+1) \times (y, y+1) \\subset \\mathbb{R}^2`,
+    identified by its lower-left corner :math:`(x, y) \\in \\mathbb{Z}^2`.
+
+    **Current design note.**  This dataclass currently conflates two distinct
+    concerns:
+
+    - *Game state*: ``type`` (which piece occupies the cell) and ``is_active``
+      (whether the cell belongs to the currently falling piece).
+    - *Render state*: ``colors`` and ``id`` (Tkinter canvas item identifier).
+
+    The planned refactor separates these: :class:`Square` will become a
+    ``NamedTuple(x: int, y: int)`` — a pure lattice-cell identifier —
+    while :class:`Board` maintains its own ``dict[Square, int]`` (canvas IDs)
+    and ``dict[Square, Colors]`` (rendering colors).  The ``is_active`` flag
+    will be eliminated once the active piece is never written to the grid.
+
+    :attr colors: Rendering colors; ``None`` for an empty cell.
+    :attr id: Tkinter canvas item ID for the drawn square; ``None`` if undrawn.
+    :attr is_active: ``True`` if this cell belongs to the currently falling piece.
+        Used to exclude active cells from full-row detection and row-shift logic.
+    :attr type: Name of the tetromino occupying this cell; ``None`` if empty.
     """
 
     colors: Colors | None = None
@@ -185,20 +275,37 @@ class Square:
 
 
 class Grid:
-    """The rectangular region of squares that comprises the game state.
+    """Finite rectangular sublattice :math:`\\mathcal{B} \\subset \\mathbb{Z}^2` with occupancy.
 
-    The squares map to integer coordinates in the first quadrant of the
-    Cartesian plane (y-up).  Each square at coordinate ``(x, y)`` occupies
-    the unit cell ``[x, x+1] × [y, y+1]``; the integer point ``(x, y)``
-    is therefore the **lower-left corner** of that cell.  ``Grid[0, 0]``
-    is the bottom-left square; ``Grid[width-1, height-1]`` is the top-right.
+    Models the region :math:`\\{0,\\ldots,w-1\\} \times \\{0,\\ldots,h-1\\}` of
+    the integer lattice.  Each cell :math:`(x, y)` is the unit open square
+    :math:`(x, x+1) \times (y, y+1)`; the integer point :math:`(x, y)` is
+    its lower-left corner.  ``Grid[0, 0]`` is the bottom-left cell;
+    ``Grid[width-1, height-1]`` is the top-right cell.
+
+    The placement validity predicate :meth:`check` tests whether a set of
+    candidate coordinates is entirely within :math:`\\mathcal{B}` and
+    overlaps no currently occupied cell:
+
+    .. math::
+
+        \\text{valid}(\\mathcal{G}, S)
+        \\iff
+        \\forall s \\in S:\\; s \\in \\mathcal{B}
+        \\;\\wedge\\; s \\notin \\operatorname{dom}(\\mathcal{G}).
+
+    **Current design note.**  The grid currently stores :class:`Square`
+    objects that mix game state (``type``, ``is_active``) with render state
+    (``colors``, ``id``).  The planned refactor replaces the internal
+    ``_grid`` with a sparse ``dict[Square, str]`` (``Occupancy``) holding
+    only locked-piece cells.  The active piece will never be written here.
 
     :attr width: Number of columns in the grid.
     :attr height: Number of rows in the grid.
     """
 
     def __init__(self, width: int, height: int) -> None:
-        """Initialize the game grid.
+        """Initialize the game grid with all cells empty.
 
         :param width: Number of columns.
         :param height: Number of rows.
@@ -246,10 +353,21 @@ class Grid:
                 yield [x, y]
 
     def check(self, coords: list[list[int]]) -> bool:
-        """Validate whether the coordinates are all contained in the grid.
+        """Test the placement validity predicate for a set of candidate coordinates.
 
-        :param coords: List of coordinates to validate.
-        :returns: True if all coordinates are valid and squares are unoccupied.
+        A set of coordinates :math:`S` is *valid* when every element lies
+        within the board domain :math:`\\mathcal{B}` and does not overlap an
+        already-occupied cell:
+
+        .. math::
+
+            \\text{valid}(\\mathcal{G}, S)
+            \\iff
+            \\forall s \\in S:\\; s \\in \\mathcal{B}
+            \\;\\wedge\\; s \\notin \\operatorname{dom}(\\mathcal{G}).
+
+        :param coords: List of ``[x, y]`` candidate coordinates.
+        :returns: ``True`` if every coordinate is in-bounds and unoccupied.
         """
         for v in coords:
             try:
@@ -261,7 +379,12 @@ class Grid:
         return True
 
     def print(self) -> None:
-        """Display grid state to stdout."""
+        """Display grid state to stdout for debugging.
+
+        Rows are printed top-to-bottom (``y = height-1`` first) with a
+        screen-row counter on the left.  Each occupied cell shows the first
+        two characters of its piece name; empty cells show two spaces.
+        """
         rows: dict[int, dict[int, str]] = {}
         for v in self:
             square = self[v]
@@ -280,20 +403,41 @@ class Grid:
 
 @dataclass
 class Polyomino:
-    r"""Define a polyomino by coordinates to each of its squares.
+    r"""A polyomino — a connected finite subset of the integer lattice :math:`\mathbb{Z}^2`.
 
-    Provides valid transformations for a polyomino on the
-    :math:`\mathbb Z^{\mathrm{dim}}` lattice (y-up Cartesian coordinates).
-    Each coordinate ``(x, y)`` in ``coords`` identifies a unit cell by its
-    **lower-left corner** at ``(x, y)`` in the plane.
+    A polyomino of **ordinal** :math:`n` (an :math:`n`-omino) is a connected
+    finite set of :math:`n` unit cells of :math:`\mathbb{Z}^2`.  This class
+    represents one, together with a rotation pivot and rendering metadata.
 
-    :attr dim: Dimensionality of the polyomino.
-    :attr colors: Colors for rendering.
-    :attr coords: Lower-left corner coordinates of each constituent cell.
-    :attr o: Centroid of ``coords``, used as the rotation pivot.
-    :attr name: Name identifier.
-    :attr full: Whether the piece represents a full row.
-    :attr full_below_count: Number of full rows below this piece.
+    **Coordinate convention.**  Each entry in ``coords`` is an ``[x, y]``
+    pair identifying a cell by its lower-left corner.  The cell at
+    :math:`(x, y)` occupies :math:`(x, x+1) \times (y, y+1)` in the plane.
+    Coordinates use y-up orientation: :math:`y = 0` is the bottom row.
+
+    **Rotation pivot** ``o``.  The pivot is stored with
+    :class:`~decimal.Decimal` arithmetic so that half-integer centres (used
+    by Z, S, I, O) are preserved exactly through all four rotation states.
+    For pieces whose geometric centre of symmetry is a half-integer point,
+    ``o = [D('-0.5'), D('-0.5')]`` in local frame; for others ``o = [0, 0]``.
+    See :ref:`half-integer-origin` in ``docs/mathematics.rst``.
+
+    **Planned refactor.**  ``coords`` becomes ``frozenset[Square]`` (a set,
+    since a polyomino has no canonical cell ordering), ``o`` becomes
+    ``tuple[Decimal, Decimal]``, ``dim`` is removed (always 2 in this game),
+    and ``full``/``full_below_count`` are removed (board-bookkeeping state
+    that pollutes the geometry class).
+
+    :attr dim: Number of coordinate dimensions (always :attr:`Dimension.Y` = 2).
+    :attr colors: Rendering colors for this piece.
+    :attr coords: List of ``[x, y]`` lower-left corners of each cell.
+    :attr o: Rotation pivot in the current board frame; uses
+        :class:`~decimal.Decimal` for exact half-integer arithmetic.
+    :attr name: Single-letter piece identifier (e.g. ``"T"``, ``"Z"``).
+    :attr full: Temporary flag set by :meth:`.Board._get_rows`; ``True`` if
+        this row-polyomino occupies a completely filled row.  Scheduled for
+        removal (board bookkeeping does not belong on the geometry type).
+    :attr full_below_count: Temporary count set by :meth:`.Board._get_rows`;
+        number of full rows below this row.  Also scheduled for removal.
     """
 
     dim: Dimension
@@ -306,33 +450,55 @@ class Polyomino:
     full_below_count: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
-        """Compute proper origin from coordinates."""
+        """Compute the rotation pivot from the coordinate centroid.
+
+        For integer-centre pieces the centroid is an integer lattice point and
+        the ``Decimal`` values are whole numbers.  For half-integer-centre
+        pieces (Z, S, I, O) the constructor supplies ``coords`` shifted by
+        :math:`(-0.5, -0.5)` so that the centroid is the correct rotation
+        pivot; the caller also sets ``o`` via direct assignment after
+        construction.
+        """
         self.o = [D(sum([v[d] for v in self.coords]) / len(self.coords)) for d in range(self.dim)]
 
     def min(self, dim: Dimension | None = None) -> int:
-        """Return the minimum coordinate of the polyomino in the given dimension.
+        """Return the minimum coordinate of the polyomino along the given axis.
 
-        :param dim: The dimension to check. Defaults to self.dim.
-        :returns: Minimum coordinate value.
+        Equivalent to :math:`\\min_{s \\in \\text{squares}} s_d` where
+        :math:`d` is the index of the requested dimension.  In the planned
+        refactor this method is replaced by the named properties
+        ``min_x`` and ``min_y``.
+
+        :param dim: Axis to query (:attr:`Dimension.X` or :attr:`Dimension.Y`).
+            Defaults to ``self.dim``.
+        :returns: Minimum coordinate value along that axis.
         """
         d = dim if dim is not None else self.dim
         return min([c[d.value - 1] for c in self.coords])
 
     def max(self, dim: Dimension | None = None) -> int:
-        """Return the maximum coordinate of the polyomino in the given dimension.
+        """Return the maximum coordinate of the polyomino along the given axis.
 
-        :param dim: The dimension to check. Defaults to self.dim.
-        :returns: Maximum coordinate value.
+        Equivalent to :math:`\\max_{s \\in \\text{squares}} s_d`.  In the
+        planned refactor replaced by ``max_x`` and ``max_y`` properties.
+
+        :param dim: Axis to query; defaults to ``self.dim``.
+        :returns: Maximum coordinate value along that axis.
         """
         d = dim if dim is not None else self.dim
         return max([c[d.value - 1] for c in self.coords])
 
     def transform(self, t: Transformation, grid: Grid) -> bool:
-        """Transform the polyomino in the given grid coordinates.
+        """Apply an :class:`EigenTransformation` to the polyomino.
+
+        Dispatches to :meth:`rotate` or :meth:`translate` based on the
+        type of generator.  In the planned refactor this method accepts the
+        richer union type ``EigenTransformation = Translation | Rotation``
+        and uses ``match``/``case`` structural pattern matching.
 
         :param t: The transformation to apply.
         :param grid: The grid to transform within.
-        :returns: True if transformation was successful.
+        :returns: ``True`` if the transformation was applied successfully.
         """
         match t.eigentransformation:
             case EigenTransformation.identity:
@@ -348,13 +514,38 @@ class Polyomino:
     def rotate(self, r: Transformation, grid: Grid) -> bool:
         """Rotate the polyomino about its proper origin.
 
-        Applies the standard 2D rotation in mathematical (y-up) coordinates:
-        ``(dx, dy) -> (dy, -dx)`` for ``multiple=+1`` (clockwise),
-        ``(dx, dy) -> (-dy, dx)`` for ``multiple=-1`` (counterclockwise).
+        Applies the standard CW quarter-turn in :math:`y`-up Cartesian
+        coordinates:
+
+        .. math::
+
+            (dx, dy) \\;\\longmapsto\\; (dy, -dx)
+            \\quad\\text{for }\\texttt{multiple}=+1\\text{ (clockwise)},
+
+            (dx, dy) \\;\\longmapsto\\; (-dy, dx)
+            \\quad\\text{for }\\texttt{multiple}=-1\\text{ (counterclockwise).}
+
+        About pivot :math:`(o_x, o_y)`, cell :math:`(x_i, y_i)` maps to
+
+        .. math::
+
+            x_i' = r \\cdot (y_i - o_y) + o_x, \\qquad
+            y_i' = -r \\cdot (x_i - o_x) + o_y,
+
+        where :math:`r` = ``multiple``.  The :func:`int` truncation is exact
+        for integer-centre pieces (T, L, J) and exact for half-integer-centre
+        pieces (Z, S, I, O) because :class:`~decimal.Decimal` arithmetic
+        preserves ``o`` without rounding.
+
+        This is the base implementation for non-tetromino polyominoes.
+        :class:`Tetromino` overrides this to use the SRS kick system.  In the
+        planned refactor both implementations are unified in a single
+        :meth:`rotate` that uses functional boundary kicks (see
+        :ref:`boundary-kicks` in ``docs/mathematics.rst``).
 
         :param r: Rotation transformation; ``multiple=+1`` is CW, ``multiple=-1`` is CCW.
-        :param grid: The grid to rotate within.
-        :returns: True if rotation was successful and polyomino fits in grid.
+        :param grid: The grid to validate the rotated position against.
+        :returns: ``True`` if the rotated position is valid and the piece was moved.
         """
         coords = [[0 for d in range(self.dim)] for _ in self.coords]
         for i, _ in enumerate(self.coords):
@@ -368,9 +559,26 @@ class Polyomino:
     def translate(self, t: Transformation | list[int], grid: Grid) -> bool:
         """Translate the polyomino within the grid.
 
-        :param t: The translation vector or transformation.
-        :param grid: The grid to translate within.
-        :returns: True if translation was successful.
+        When ``t`` is a raw ``[dx, dy]`` list, or when the eigentransformation
+        is ``horizontal`` or ``vertical``, a **single step** is applied: the
+        piece moves by ``(dx, dy)`` if the destination is valid, otherwise the
+        piece is unchanged.
+
+        When the eigentransformation is ``min``, ``max``, or ``bottom``
+        (scheduled for removal — see :class:`EigenTransformation`), the piece
+        is moved *incrementally* one unit at a time until the next step would
+        be invalid.  This computes the **supremum of the piece's orbit** under
+        the unit generator; see :ref:`extremal-translations` in
+        ``docs/mathematics.rst``.
+
+        In the planned refactor this method is replaced by a value-returning
+        ``translate(t: Translation, grid: Grid) -> Polyomino | None``.
+
+        :param t: Translation specification — a ``Transformation`` or a raw
+            ``[dx, dy]`` list.
+        :param grid: The grid to validate positions against.
+        :returns: ``True`` if the piece moved (including for the incremental
+            case, which always returns ``True`` regardless of how far it moved).
         """
         dx, dy, single_step = self._get_translation(t)
         if dx is None and dy is None:
@@ -393,11 +601,20 @@ class Polyomino:
         return False
 
     def _get_translation(self, t: Transformation | list[int]) -> tuple[int, int, bool]:
-        """Get translation vector (dx, dy) and whether to use single step or iterate.
+        """Decode a translation specification into a unit vector and step mode.
 
-        :param t: The translation specification.
-        :returns: (dx, dy, single_step) where single_step indicates whether to
-            move once or iterate until blocked.
+        Returns ``(dx, dy, single_step)`` where ``single_step=True`` means
+        apply once, ``single_step=False`` means apply repeatedly until blocked
+        (the inductive supremum computation for ``min``/``max``/``bottom``).
+
+        Note the sign convention for ``vertical``: ``multiple=+1`` returns
+        ``dy=-1`` (one step *down*), because the ``vertical`` generator
+        points in the gravity direction by convention.  This will be
+        corrected in the refactor to a consistent y-up sign (where
+        ``Translation(0, -1)`` explicitly means downward).
+
+        :param t: A :class:`Transformation` or a raw ``[dx, dy]`` list.
+        :returns: ``(dx, dy, single_step)`` tuple.
         """
         if isinstance(t, list):
             return t[0], t[1], True
@@ -417,13 +634,20 @@ class Polyomino:
 
 @dataclass(frozen=True)
 class TetrominoData:
-    """Immutable data for a tetromino type.
+    """Immutable spawn-state geometry and colors for a single tetromino type.
 
-    :attr name: Single-letter identifier.
-    :attr coords: Coordinates to each square.
-    :attr normal: Primary color hex code.
-    :attr light: Light color hex code.
-    :attr dark: Dark color hex code.
+    ``coords`` stores the four cell positions in the piece's local (origin-
+    centred) coordinate frame using :class:`~decimal.Decimal` values.  For
+    pieces whose geometric centre of symmetry is a half-integer point (Z, S,
+    I, O), the coordinates encode the half-integer shift needed to locate the
+    pivot exactly — the :class:`Tetromino` constructor extracts the integer
+    cell positions and sets ``o = [D('-0.5'), D('-0.5')]`` accordingly.
+
+    :attr name: Single-letter piece identifier.
+    :attr coords: Local-frame cell positions as ``(x, y)`` :class:`~decimal.Decimal` pairs.
+    :attr normal: Primary face color (hex string).
+    :attr light: Lighter bevel color (hex string).
+    :attr dark: Darker bevel color (hex string).
     """
 
     name: str
@@ -434,15 +658,26 @@ class TetrominoData:
 
 
 class TetrominoType(enum.Enum):
-    """Enumeration of all tetromino types.
+    """Enumeration of the seven one-sided tetrominoes.
 
-    :attr Z: Z-shaped tetromino.
-    :attr S: S-shaped tetromino.
-    :attr l: l-shaped tetromino.
-    :attr T: T-shaped tetromino.
-    :attr o: o-shaped tetromino.
-    :attr L: L-shaped tetromino.
-    :attr J: J-shaped tetromino.
+    There are exactly **seven** one-sided tetrominoes (treating each piece
+    as distinct from its mirror image) but only five *free* tetrominoes
+    (where mirror images are identified).  This game uses the seven one-sided
+    forms because reflections are not valid moves — a player cannot flip a
+    physical piece over — so S :math:`\\neq` Z and L :math:`\\neq` J.
+
+    Each member holds a :class:`TetrominoData` value encoding the spawn-
+    state geometry and colors.  The ``l`` member uses a lowercase name to
+    avoid confusion with the integer ``1``; similarly ``o`` avoids confusion
+    with the integer ``0``.
+
+    :attr Z: Z-tetromino; half-integer centre, spawns in two-row zigzag.
+    :attr S: S-tetromino; half-integer centre, mirror of Z.
+    :attr l: I-tetromino (four in a row); half-integer centre.
+    :attr T: T-tetromino; integer centre, T-shape.
+    :attr o: O-tetromino (2×2 square); half-integer centre.
+    :attr L: L-tetromino; integer centre, L-shape.
+    :attr J: J-tetromino; integer centre, J-shape (mirror of L).
     """
 
     Z = TetrominoData(
@@ -504,6 +739,17 @@ class TetrominoType(enum.Enum):
         return Tetromino(self.value)
 
 
+# SRS_KICK_JLSTZ: precomputed wall-kick offsets for J, L, S, T, Z pieces.
+#
+# Each key ``(state_before, state_after)`` identifies a rotation transition in
+# C_4 = {0, 1, 2, 3} where 0 = spawn, 1 = CW-90°, 2 = 180°, 3 = CW-270°.
+# Each value is a list of (dx, dy) offsets in the y-up coordinate system
+# (y-values are negated from the Tetris Wiki, which uses y-down).  The offsets
+# are tried in order; the first placement accepted by Grid.check wins.
+#
+# Planned removal: the refactor replaces these tables with the _boundary_kicks
+# algebraic generator derived from the rotated piece's bounding box.
+# See docs/mathematics.rst §Boundary Kicks.
 SRS_KICK_JLSTZ: dict[tuple[int, int], list[tuple[int, int]]] = {
     (0, 0): [],
     (0, 1): [(0, 0), (-1, 0), (-1, -1), (0, +2), (-1, +2)],
@@ -519,6 +765,10 @@ SRS_KICK_JLSTZ: dict[tuple[int, int], list[tuple[int, int]]] = {
     (3, 3): [],
 }
 
+# SRS_KICK_I: precomputed wall-kick offsets for the I (l) piece.
+# Same key/value structure as SRS_KICK_JLSTZ but with I-piece-specific offsets
+# that account for its 4×1 bounding box and half-integer rotation centre.
+# Planned removal: replaced by _boundary_kicks in the refactor.
 SRS_KICK_I: dict[tuple[int, int], list[tuple[int, int]]] = {
     (0, 0): [],
     (0, 1): [(0, 0), (-2, 0), (+1, 0), (-2, +1), (+1, -2)],
@@ -534,6 +784,11 @@ SRS_KICK_I: dict[tuple[int, int], list[tuple[int, int]]] = {
     (3, 3): [],
 }
 
+# SRS_KICK_O: precomputed wall-kick offsets for the O (o) piece.
+# All offsets are (0, 0): the O piece is rotationally symmetric about its
+# 2×2 bounding box centre, so no corrective translation is ever needed.
+# Planned removal: replaced by _boundary_kicks in the refactor (which will
+# simply yield (0,0) only for the O piece, since it never violates boundaries).
 SRS_KICK_O: dict[tuple[int, int], list[tuple[int, int]]] = {
     (0, 0): [],
     (0, 1): [],
@@ -552,6 +807,14 @@ SRS_KICK_O: dict[tuple[int, int], list[tuple[int, int]]] = {
     (3, 3): [],
 }
 
+# SRS_CENTERS: rotation pivot lookup by piece name.
+#
+# All entries are (D(0), D(0)) — a vestigial structure from a previous
+# implementation where the I piece used a different centre.  The original
+# half-integer pivot approach (origin = D('-0.5'), D('-0.5') for Z/S/I/O)
+# was removed by agent-assisted edits; this dict records integer pivots for
+# all pieces instead.  Scheduled for removal in the planned refactor, which
+# restores half-integer origins for Z, S, I, O and eliminates this lookup.
 SRS_CENTERS: dict[str, tuple[D, D]] = {
     "Z": (D(0), D(0)),
     "S": (D(0), D(0)),
@@ -572,11 +835,24 @@ def used_keys() -> list[str]:
 
 
 class Tetromino(Polyomino):
-    """Base class for tetrominoes.
+    """A :class:`Polyomino` of ordinal 4, with SRS rotation-state tracking.
 
-    :attr dim: Always Dimension.Y for tetrominoes (2D).
-    :attr name: Single-letter identifier.
-    :attr rotation_state: SRS rotation state (0-3).
+    Subclasses :class:`Polyomino` to add ``rotation_state``, which tracks
+    the piece's current position in :math:`C_4 = \\{0, 1, 2, 3\\}` for SRS
+    kick-table lookup.  State ``0`` is the spawn orientation, ``1`` is
+    CW-90°, ``2`` is 180°, ``3`` is CW-270°.
+
+    **Planned removal.**  The planned refactor removes this subclass entirely:
+
+    * All pieces become plain :class:`Polyomino` instances.
+    * ``rotation_state`` is unnecessary once the SRS kick tables are replaced
+      by the ``_boundary_kicks`` algebraic generator.
+    * A piece *knows* it is a tetromino through the ``ordinal`` property
+      (``piece.ordinal == 4``), not via subclass identity.
+
+    :attr dim: Always :attr:`Dimension.Y` (= 2) for tetrominoes.
+    :attr name: Single-letter piece identifier.
+    :attr rotation_state: Current :math:`C_4` index; used to look up SRS kicks.
     """
 
     dim: Dimension = Dimension.Y
@@ -584,9 +860,10 @@ class Tetromino(Polyomino):
     rotation_state: int = 0
 
     def __init__(self, data: TetrominoData | None = None) -> None:
-        """Initialize a tetromino.
+        """Initialize a tetromino from :class:`TetrominoData`.
 
-        :param data: Data to initialize from. If None, creates empty tetromino.
+        :param data: Spawn-state geometry and colors.  If ``None``, creates
+            an empty tetromino with no cells or colors.
         """
         self.coords: list[list[int]] = []
         self.colors: Colors = Colors("", "", "")
@@ -599,9 +876,12 @@ class Tetromino(Polyomino):
         self.dim = Dimension.Y
 
     def _get_kick_table(self) -> dict[tuple[int, int], list[tuple[int, int]]]:
-        """Get the SRS kick table for this tetromino.
+        """Return the SRS kick table appropriate for this piece.
 
-        :returns: Kick table for JLSTZ, I, or O piece.
+        Routes to :data:`SRS_KICK_O` (O piece), :data:`SRS_KICK_I` (I piece),
+        or :data:`SRS_KICK_JLSTZ` (all others).
+
+        :returns: Kick-offset table keyed by ``(state_before, state_after)``.
         """
         if self.name == "o":
             return SRS_KICK_O
@@ -610,14 +890,27 @@ class Tetromino(Polyomino):
         return SRS_KICK_JLSTZ
 
     def _rotate_coords(self, direction: int) -> list[list[int]]:
-        """Calculate rotated coordinates about the SRS origin.
+        """Compute freely-rotated coordinates (no grid validity check).
 
-        Applies ``(dx, dy) -> (dy, -dx)`` for ``direction=+1`` (clockwise) and
-        ``(dx, dy) -> (-dy, dx)`` for ``direction=-1`` (counterclockwise), both
-        in the mathematical y-up coordinate system used throughout the game.
+        Applies the standard CW quarter-turn formula in :math:`y`-up
+        Cartesian coordinates:
 
-        :param direction: Rotation direction (+1=CW, -1=CCW in mathematical y-up coords).
-        :returns: New coordinates after rotation.
+        .. math::
+
+            x_i' = d \\cdot (y_i - o_y) + o_x, \\qquad
+            y_i' = -d \\cdot (x_i - o_x) + o_y,
+
+        where :math:`d` = ``direction``.  ``direction=+1`` gives
+        :math:`(dx,dy) \\mapsto (dy,-dx)` (CW); ``direction=-1`` gives
+        :math:`(dx,dy) \\mapsto (-dy,dx)` (CCW).
+
+        This method is extracted from :meth:`srs_rotate` so that the SRS
+        algorithm can compute the rotated coordinates before checking each
+        kick offset.  In the planned refactor this logic is inlined into a
+        unified :meth:`Polyomino.rotate` method.
+
+        :param direction: ``+1`` for CW, ``-1`` for CCW (y-up convention).
+        :returns: New ``[x, y]`` coordinates for each cell after rotation.
         """
         coords = [[0 for _ in range(self.dim)] for _ in self.coords]
         for i, _ in enumerate(self.coords):
@@ -626,15 +919,32 @@ class Tetromino(Polyomino):
         return coords
 
     def srs_rotate(self, direction: int, grid: Grid) -> bool:
-        """Rotate using SRS with full kick tables.
+        """Rotate using the Super Rotation System (SRS) with kick tables.
 
-        Attempts each kick offset from the SRS table in order, applying the
-        rotation ``(dx, dy) -> (dy, -dx)`` for CW or ``(-dy, dx)`` for CCW
-        in the mathematical y-up coordinate system.
+        Implements the Tetris Guideline SRS algorithm:
 
-        :param direction: Rotation direction (+1=CW, -1=CCW in mathematical y-up coords).
-        :param grid: The grid to rotate within.
-        :returns: True if rotation was successful.
+        1. Compute the rotation state transition
+           :math:`k_{\\text{new}} = (k_{\\text{old}} + d) \\bmod 4` where
+           :math:`d` = ``direction`` (:math:`+1` CW, :math:`-1` CCW).
+        2. Look up the kick-offset list from the appropriate table
+           (:data:`SRS_KICK_JLSTZ`, :data:`SRS_KICK_I`, or
+           :data:`SRS_KICK_O`) for the state pair
+           ``(state_old, state_new)``.
+        3. For each offset :math:`(\\delta x, \\delta y)` in the list:
+           compute the freely-rotated coordinates via
+           :meth:`_rotate_coords`, translate by the offset, and test
+           with :meth:`Grid.check`.
+        4. Accept the first valid placement; update ``coords``, ``o``, and
+           ``rotation_state``.  Return ``False`` if all offsets fail.
+
+        This is the precomputed-table equivalent of the ``_boundary_kicks``
+        algebraic generator that will replace it in the planned refactor.
+        Both implement the *covariant rotation* concept: free rotation
+        corrected by a compensating translation for the bounded domain.
+
+        :param direction: ``+1`` for CW, ``-1`` for CCW (y-up convention).
+        :param grid: The grid to validate each candidate placement against.
+        :returns: ``True`` if a valid placement was found and the piece was moved.
         """
         old_state = self.rotation_state
         new_state = (old_state + direction) % 4
@@ -789,10 +1099,27 @@ class TimerVar:
 
 
 class Board(tk.Canvas):
-    """Display polyomino block grid on a Tkinter canvas.
+    """Tkinter canvas that renders the game board.
 
-    :attr width: Grid width in squares.
-    :attr height: Grid height in squares.
+    Each :class:`Board` instance owns one :class:`Grid` (``_game_grid``)
+    and acts as both the occupancy-map store and the rendering surface.
+
+    **Coordinate systems.**  The game uses Cartesian :math:`y`-up coordinates
+    (``y=0`` at the bottom).  Tkinter uses screen coordinates with ``y=0`` at
+    the top.  The transform :math:`(x, y) \\mapsto (x, h-1-y)` — implemented in
+    :meth:`_transform_coord` — converts between them.
+
+    **Planned architectural change.**  The planned refactor separates state from
+    rendering:
+
+    * :class:`Grid` becomes a pure occupancy map (``dict[Square, str]``),
+      owned directly by :class:`TetraTile`.
+    * :class:`Board` becomes a pure rendering surface: it owns render maps
+      (``dict[Square, int]`` for canvas IDs, ``dict[Square, Colors]``) but
+      holds no game-state grid.
+
+    :attr width: Grid width in squares (delegates to ``_game_grid.width``).
+    :attr height: Grid height in squares (delegates to ``_game_grid.height``).
     """
 
     @property
@@ -839,13 +1166,21 @@ class Board(tk.Canvas):
         )
 
     def _transform_coord(self, v: list[int]) -> list[int]:
-        """Transform tetratile coordinates to Tkinter coordinates.
+        """Convert Cartesian :math:`y`-up coordinates to Tkinter screen coordinates.
 
-        Tetratile uses a Cartesian plane with origin at lower left,
-        while Tkinter uses origin at upper left.
+        The game uses :math:`y`-up orientation (:math:`y=0` at the bottom);
+        Tkinter places the origin at the top-left with :math:`y` increasing
+        downward.  The bijection is
 
-        :param v: Tetratile coordinates.
-        :returns: Tkinter coordinates.
+        .. math::
+
+            (x, y) \\;\\longmapsto\\; (x,\\; h - 1 - y),
+
+        where :math:`h` is the board height.  This is an involution (its own
+        inverse), so it converts in both directions.
+
+        :param v: Cartesian ``[x, y]`` coordinates.
+        :returns: Tkinter ``[x, screen_y]`` coordinates.
         """
         return [v[0], self.height - 1 - v[1]]
 
@@ -902,9 +1237,15 @@ class Board(tk.Canvas):
                     square.is_active = is_active
 
     def select_full_rows(self) -> bool:
-        """Mark full rows with full row colors prior to removing them.
+        """Highlight full rows with a distinct color to signal impending removal.
 
-        :returns: True if any full rows were found.
+        A row at height :math:`y` is *full* when every cell in
+        :math:`\\{0, \\ldots, w-1\\} \\times \\{y\\}` is occupied by a locked piece
+        (``is_active`` is false).  Full rows are redrawn in
+        ``full_row_colors`` to provide a visual cue before the scheduled
+        :meth:`remove_full_rows` call.
+
+        :returns: ``True`` if at least one full row was found.
         """
         has_full_rows = False
         for y in range(self.height):
@@ -925,10 +1266,20 @@ class Board(tk.Canvas):
         return has_full_rows
 
     def _get_rows(self) -> tuple[int, list[Polyomino]]:
-        """Gather all full and partial rows.
+        """Collect all non-empty rows as temporary row-polyominoes.
 
-        :returns: (full_count, rows) where full_count is the number of full rows
-            and rows is a list of row polyominoes.
+        Each row is modelled as a degenerate :class:`Polyomino` (a
+        :math:`1 \\times w` strip) carrying a ``full`` flag and a
+        ``full_below_count`` (the number of full rows below it, used to
+        compute the shift distance during row removal).
+
+        This is a transitional representation: in the planned refactor the
+        row-bookkeeping fields ``Polyomino.full`` and
+        ``Polyomino.full_below_count`` are removed, and row operations work
+        directly on the occupancy dict.
+
+        :returns: ``(full_count, rows)`` — the number of full rows and a list
+            of non-empty row polyominoes from bottom to top.
         """
         rows: list[Polyomino] = []
         full_count = 0
@@ -955,7 +1306,20 @@ class Board(tk.Canvas):
         return full_count, rows
 
     def remove_full_rows(self) -> int:
-        """Remove full rows.
+        """Remove all full rows and shift the overburden down.
+
+        Full rows are those where every cell is occupied by a locked piece.
+        After removing them, each remaining locked cell at height :math:`y`
+        is shifted down by the count of full rows strictly below it:
+
+        .. math::
+
+            y' = y - |\\{y_f < y : y_f \\text{ is a full row}\\}|.
+
+        Cells are processed bottom-to-top to avoid overwriting unprocessed
+        cells during the shift.  Both the occupancy data and the canvas
+        rendering are updated atomically: each shifted cell is erased from
+        its old position and redrawn at its new position.
 
         :returns: Number of rows removed.
         """
@@ -1033,12 +1397,32 @@ class Board(tk.Canvas):
 
 
 class TetraTile(tk.Frame):
-    """Main game window.
+    """Game controller: owns the occupancy state, active piece, and rendering surfaces.
 
-    :attr board: The main game board.
-    :attr preview_board: The preview board showing next piece.
-    :attr projection_board: The projection/shadow board.
-    :attr state: Current game state.
+    :class:`TetraTile` is the central coordinator.  It owns:
+
+    * ``board`` — the main :class:`Board` (canvas + :class:`Grid`).  In the
+      planned refactor the :class:`Grid` will be lifted out into
+      ``self._grid`` so that :class:`Board` becomes a pure renderer.
+    * ``piece`` — the active :class:`Polyomino` (never written to
+      ``board._game_grid`` while falling; only written at lock-time).
+    * The input and output handler registries.
+
+    All player and agent input enters through :meth:`move_piece`, which is
+    the **single canonical state guard**: it returns ``False`` immediately
+    unless the game is :attr:`GameState.running`.
+
+    :meth:`iterate` is the **gravity clock**: one call applies the generator
+    :math:`-e_y` (``Translation(0, -1)``), locking the piece and spawning
+    the next one if it cannot descend.
+
+    :attr board: Main rendering canvas with embedded game grid.
+    :attr preview_board: Small canvas showing the next piece.
+    :attr projection_board: Optional 1-row canvas for the ghost shadow.
+    :attr piece: Currently falling :class:`Polyomino`, or ``None``.
+    :attr next_piece: Next piece to spawn.
+    :attr state: Current :class:`GameState`.
+    :attr event_logger: Records game events for replay/analysis.
     """
 
     def __init__(self, config: GameConfig, master: tk.Tk | None = None) -> None:
@@ -1072,6 +1456,12 @@ class TetraTile(tk.Frame):
         self.event_logger.start(config)
 
         def _sync_logger_time() -> None:
+            """Synchronise the event logger's timestamp with the game timer.
+
+            Converts the current :attr:`time_elapsed` value to milliseconds
+            and forwards it to :meth:`.EventLogger.update_time`.  Called
+            before every event log entry to ensure accurate timestamps.
+            """
             elapsed_seconds = self.time_elapsed.get(as_seconds=True)
             elapsed_ms = int((elapsed_seconds or 0) * 1000)
             self.event_logger.update_time(elapsed_ms, 0)
@@ -1483,17 +1873,36 @@ class TetraTile(tk.Frame):
     }
 
     def setup_events(self) -> None:
-        """Bind keyboard keys to input handler methods.
+        """Bind keyboard keys to input handler methods via :attr:`_KEY_MAP`.
 
-        All key events are routed through the active ``_input_handler`` so
-        that swapping handlers (human ↔ agent) automatically changes who
-        controls the game.
+        Every key binding routes through the *active* ``_input_handler``, so
+        swapping the handler (e.g. from :class:`HumanInputHandler` to
+        :class:`AgentInputHandler`) transparently changes who controls the
+        game without re-binding keys.  The mapping is::
+
+            KeysConfig field  →  InputHandler method
+            ─────────────────────────────────────────
+            pause             →  toggle_pause
+            left              →  move_left
+            right             →  move_right
+            left_side         →  move_left_max
+            right_side        →  move_right_max
+            rotate_left       →  rotate_ccw
+            rotate_right      →  rotate_cw
+            down              →  soft_drop
+            drop              →  hard_drop
+            lock              →  lock_piece
         """
 
         def _make_cb(method_name: str) -> typing.Callable[[tk.Event], None]:
-            """Create a tkinter callback that dispatches to the named handler method."""
+            """Return a Tkinter event callback that calls ``method_name`` on the active handler.
+
+            The closure captures ``method_name`` (not the handler itself) so
+            that handler swaps take effect without rebinding.
+            """
 
             def callback(event: tk.Event) -> None:  # noqa: ARG001
+                """Dispatch the bound key event to the active input handler."""
                 getattr(self._input_handler, method_name)()
 
             return callback
@@ -1556,11 +1965,20 @@ class TetraTile(tk.Frame):
         self.iterate_id = self._schedule(GameEvent.iterate)
 
     def iterate(self) -> None:
-        """Process one game cycle.
+        """Process one gravity tick.
 
-        Applies gravity (moves the active piece down one row), locks it and
-        spawns the next piece if it cannot move, then notifies observers and
-        reschedules.
+        Applies the generator :math:`-e_y` (one step downward) to the active
+        piece.  If the piece cannot descend (it is blocked by the floor or the
+        stack), it is **locked** (written to the occupancy grid) and the next
+        piece is spawned.  Full-row removal is scheduled asynchronously.
+
+        After each tick all registered :class:`.OutputHandler`s receive a
+        fresh :class:`GameObservation` snapshot via :meth:`_notify_observers`.
+
+        In automatic mode this method reschedules itself via :meth:`_schedule`
+        at the current fall rate.  When :attr:`_manual_drive` is ``True``
+        (e.g. in :class:`.AgentRunner`) the caller drives this method directly
+        and no Tk timer is created.
         """
         if self.state == GameState.paused:
             return
@@ -1579,10 +1997,23 @@ class TetraTile(tk.Frame):
             self.restart_button.pack(side="top")
 
     def add_piece(self) -> None:
-        """Add a tetromino to the top center of the board."""
+        """Spawn the next tetromino at the top-centre of the board.
+
+        The piece's local-frame coordinates are translated to board-frame by
+        the vector ``(board.width//2 - pdeg//2, board.height - 1 - piece.max_y)``,
+        placing its top edge flush with the top of the board.
+
+        If the spawn position is already occupied by locked pieces,
+        the game transitions to :attr:`GameState.over`.  In the planned
+        refactor this uses :meth:`Polyomino.at` (a no-check translate) instead
+        of :meth:`Polyomino.translate` with a grid check.
+
+        The piece is **not** written to the occupancy grid at spawn; it lives
+        only in ``self.piece`` until :meth:`lock_piece` commits it.
+        """
 
         def get_next_piece() -> None:
-            """Get a new piece for preview."""
+            """Select and preview a new random piece."""
             self.preview_board.clear()
             self.next_piece = copy.deepcopy(random.choice(tetrominoes))
             self.next_piece.translate(
@@ -1631,14 +2062,28 @@ class TetraTile(tk.Frame):
             self.set_state(GameState.over)
 
     def move_piece(self, transformation: Transformation) -> bool:
-        """Move current piece according to the transformation requested.
+        """Apply a transformation to the active piece.
 
-        Returns ``False`` immediately if the game is not :attr:`GameState.running`
-        or no piece is active.  This is the single canonical state guard for
-        all input actions.
+        This is the **single canonical entry point for all input actions**
+        (human or agent).  It enforces the state guard:
 
-        :param transformation: The transformation to apply.
-        :returns: True if the move was successful.
+        * Returns ``False`` immediately if the game is not
+          :attr:`GameState.running` or no piece is active.
+
+        On a successful move the active piece is erased from the board,
+        the transformation applied, and the piece redrawn at its new
+        position.  Events are logged for rotation, horizontal, and vertical
+        moves.
+
+        Rotation is routed through :meth:`Tetromino.srs_rotate` (which
+        uses the SRS kick tables); all other transformations are routed
+        through :meth:`Polyomino.transform`.  In the planned refactor both
+        paths are unified in :meth:`Polyomino.rotate` using functional
+        boundary kicks.
+
+        :param transformation: The :class:`EigenTransformation` to apply,
+            wrapped in a :class:`Transformation`.
+        :returns: ``True`` if the piece moved successfully.
         """
         if self.state != GameState.running or self.piece is None:
             return False
@@ -1666,7 +2111,12 @@ class TetraTile(tk.Frame):
         return result
 
     def remove_full_rows(self) -> None:
-        """Remove full rows and move partial rows down into the vacancies."""
+        """Remove full rows, shift overburden, and update statistics.
+
+        Delegates to :meth:`Board.remove_full_rows` for the grid operation,
+        then updates the removed-rows counters and logs a
+        :attr:`~.EventType.row_clear` event.
+        """
         full_count = self.board.remove_full_rows()
         self._update_removed(full_count)
         if full_count > 0:
@@ -1674,9 +2124,11 @@ class TetraTile(tk.Frame):
             self.event_logger.log(EventType.row_clear, count=full_count)
 
     def _get_stats(self) -> dict[str, typing.Any]:
-        """Get current game statistics.
+        """Collect current game statistics into a plain dictionary.
 
-        :returns: Dictionary of game statistics.
+        :returns: Dictionary with keys ``pieces``, ``rows_cleared``,
+            ``rows_by_count`` (list indexed by simultaneous-clear count − 1),
+            and ``pieces_by_type`` (dict mapping piece name to usage count).
         """
         return {
             "pieces": self.used["total"].get(),
