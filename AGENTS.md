@@ -258,13 +258,19 @@ tetratile/
 ## Key Classes
 
 - **TetraTile**: Main game window, event loop, and game controller
-- **Board**: Tkinter canvas — pure rendering surface (no game state)
-- **Grid**: Locked-piece occupancy map — pure game state (no rendering)
-- **Polyomino**: Immutable set of ``Square``s with a rotation pivot
+- **Board**: Tkinter canvas — pure rendering surface (no game state);
+  ``render(grid, active, locked_dirty=False)`` uses a targeted delta strategy
+  (O(``piece.ordinal``) per tick); full repaint only when ``locked_dirty=True``
+- **Grid**: Locked-piece occupancy map as ``dict[Square, str]`` — pure game state (no rendering)
+- **Polyomino**: Immutable frozen dataclass; ``squares: frozenset[Square]``;
+  ``translate``/``rotate`` return new instances (value semantics); ``rotate`` accepts ``kick: bool``
+- **Colors**: Immutable ``NamedTuple(normal, light, dark)`` — rendering colors for a piece
 - **TetrominoType**: Enum of the 7 one-sided tetromino definitions
 - **TetrominoData**: Frozen dataclass with tetromino spawn geometry
 - **InputHandler**: Coequal base class for human and agent input
 - **Agent**: Pure decision function ``GameObservation → Action``
+- **AgentRunner**: Owns game + agent; drives the action loop; returns ``GameResult``
+- **GameResult**: Frozen dataclass — final stats, terminal observation, step count
 - **OutputHandler**: Push-notification observer interface
 
 ## Tetromino Enumeration

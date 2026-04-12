@@ -5,7 +5,7 @@ import pytest
 from tetratile import GameObservation, GameState
 from tetratile.agent import Action, Agent, RandomAgent
 from tetratile.agent_runner import AgentRunner, GameResult
-from tetratile.config import GameConfig
+from tetratile.config import BoardConfig, GameConfig
 
 
 class TestAgentRunnerBasic:
@@ -15,7 +15,7 @@ class TestAgentRunnerBasic:
     def config(self) -> GameConfig:
         """Minimal config: fast rate, small board, no GUI scaling."""
         return GameConfig(
-            board=__import__("tetratile.config", fromlist=["BoardConfig"]).BoardConfig(width=10, height=10, scale=8),
+            board=BoardConfig(width=10, height=10, scale=8),
             initial_rate=100.0,
             min_rate=100.0,
             screen_scale=False,

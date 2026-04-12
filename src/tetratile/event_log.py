@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import enum
 import json
+import os
 import random
 import uuid
 from dataclasses import asdict, dataclass
@@ -270,8 +271,14 @@ class EventLogger:
 
     @staticmethod
     def _get_default_log_dir() -> Path:
-        """Get default log directory.
+        """Return the XDG-compliant default log directory.
 
-        :returns: Path to default log directory.
+        Resolves to ``$XDG_DATA_HOME/tetratile/logs/``, falling back to
+        ``~/.local/share/tetratile/logs/`` when ``XDG_DATA_HOME`` is unset,
+        per the `XDG Base Directory Specification
+        <https://specifications.freedesktop.org/basedir-spec/latest/>`_.
+
+        :returns: Absolute path to the default log directory.
         """
-        return Path.cwd()
+        base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+        return base / "tetratile" / "logs"

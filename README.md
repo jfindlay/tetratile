@@ -29,7 +29,7 @@ The fall rate scales logarithmically with the number of completed rows removed. 
 
 The game can be configured by (in order of increasing precedence):
 - Defaults defined in `tetratile.config.GameConfig`
-- The config file: `~/.config/tetratile/tetratile.toml` (or `$XDG_CONFIG_HOME/tetratile/tetratile.toml`)
+- The config file: `~/.config/tetratile/config.toml` (or `$XDG_CONFIG_HOME/tetratile/config.toml`)
 - Command line parameters
 
 Not all configs available to the config file are available on the command line.
@@ -67,7 +67,7 @@ $ uv build
 
 ## Event Log
 
-Game events are logged during play and saved automatically when the game ends. Logs are saved to `~/.local/share/tetratile/logs/` (or `$XDG_DATA_HOME/tetratile/logs/`).
+Game events are logged during play and saved automatically when the game ends.  Logs are saved to `~/.local/share/tetratile/logs/` (or `$XDG_DATA_HOME/tetratile/logs/` when `XDG_DATA_HOME` is set).
 
 ### Viewing Logs
 
@@ -100,7 +100,13 @@ Events are stored as JSON with:
 ## TODO
 
 - [ ] Project package/module reorganization?
-- [ ] Test reevaluation
-  - Integration tests should not depend on package installed on host system
+- [x] Test reevaluation
+  - Integration tests use `pythonpath = ["src"]` in `pyproject.toml`; no host-installed package is required
 - [ ] Configurably allow monomino, domino, trominoes(, pentominoes, ...?)
-- [ ] AI
+- [x] AI harness — basic infrastructure complete
+  - `Agent` ABC: pure decision function `GameObservation → Action`
+  - `AgentInputHandler`: coequal agent frontend (structurally identical to `HumanInputHandler`)
+  - `AgentRunner`: wires an `Agent` to a `TetraTile` game; drives the loop and returns `GameResult`
+  - `RandomAgent`: uniform-random baseline (equivalent to the Aste–Sherrington random Tetris model)
+  - `--agent` / `--observe` CLI flags
+  - Remaining: heuristic agents, trained/RL agents

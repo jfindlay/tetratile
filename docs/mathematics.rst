@@ -14,9 +14,8 @@ the group :math:`\mathbb{Z}^2 \rtimes C_4`, and the game as a whole is
 a driven cellular automaton on the integer lattice :math:`\mathbb{Z}^2`.
 
 This document is the authoritative mathematical reference for the
-codebase.  All descriptions refer to the post-refactor target state of
-the code (see ``AGENTS.md`` for the design-principles summary and the
-implementation plan).
+codebase.  All descriptions reflect the current implementation
+(see ``AGENTS.md`` for the design-principles summary).
 
 
 The Integer Lattice :math:`\mathbb{Z}^2`
@@ -105,30 +104,47 @@ tetromino.
 Half-Integer Origins
 ~~~~~~~~~~~~~~~~~~~~
 
-The rotation pivot :math:`(o_x, o_y)` should be the geometric centre of
-symmetry of the piece.  For most tetrominoes (T, L, J) this centre is an
-integer lattice point and ``origin = (D(0), D(0))`` in local
-coordinates.
+The rotation pivot :math:`(o_x, o_y)` is the point about which the
+rotation formula is applied.  For the integer-centre pieces (T, L, J)
+the pivot is an integer lattice point and ``origin = (D(0), D(0))`` in
+local coordinates.
 
-For Z, S, I, and O, the geometric centre of symmetry is a *half-integer*
-point — it falls between lattice nodes.  For example, the Z tetromino in
-its spawn orientation
+For Z, S, I, and O the pivot is chosen as the **canonical half-integer
+point** :math:`(-\tfrac{1}{2}, -\tfrac{1}{2})` in local coordinates
+(``origin = (D('-0.5'), D('-0.5'))``).  This choice is motivated by
+*arithmetic exactness*, not by a symmetry property of the piece shape:
 
 .. math::
 
-   \{(-2,-1),\; (-1,-1),\; (-1,-2),\; (0,-2)\}
+   x' = \underbrace{s \cdot (y - o_y)}_{\text{half-integer}}
+        + \underbrace{o_x}_{\text{half-integer}}
+        \;=\; \text{integer},
 
-(after the standard half-integer coordinate shift) has centroid
-:math:`(-\tfrac{3}{2}, -\tfrac{3}{2})`.  The correct rotation pivot is
-at :math:`(-\tfrac{1}{2}, -\tfrac{1}{2})`, which lies between the four
-central cells.
+because :math:`y - (-\tfrac{1}{2}) = y + \tfrac{1}{2}` is a
+half-integer for any integer coordinate :math:`y`, and
+:math:`s \cdot (y + \tfrac{1}{2}) + (-\tfrac{1}{2})` is always an
+integer (for :math:`s = \pm 1`).  The same argument applies to
+:math:`y'`.  No :func:`int` truncation drift is possible because no
+rounding ever occurs.
 
-By storing ``origin = (D('-0.5'), D('-0.5'))`` and using
-:class:`~decimal.Decimal` arithmetic in the rotation formula, the pivot
-is preserved exactly through all four rotation states.  This gives
-*exact* rotation with no accumulated integer-truncation drift, and
-eliminates the need for rotation-correcting kicks for these pieces in
-free space.
+For example, the Z tetromino in its spawn orientation has local-frame
+squares
+
+.. math::
+
+   \{(-1,1),\; (0,0),\; (0,1),\; (1,0)\},
+
+centroid :math:`(0, \tfrac{1}{2})`.  The pivot
+:math:`(-\tfrac{1}{2}, -\tfrac{1}{2})` is *not* the centroid (the O
+piece is the only tetromino whose pivot equals the centroid); it is
+instead the canonical half-integer point that guarantees all four
+rotation states map integer coordinates to integer coordinates.
+
+By storing the pivot with :class:`~decimal.Decimal` arithmetic, its
+fractional part is preserved exactly through all translations and
+rotations, giving *exact* rotation with no accumulated truncation drift,
+and eliminating rotation-correcting kicks for these pieces in free
+space.
 
 .. _transform-group:
 
@@ -251,6 +267,12 @@ and exact for pieces with half-integer origins (Z, S, I, O) because
 :class:`~decimal.Decimal` arithmetic preserves the half-integer values
 through all four rotation states without rounding.
 
+:meth:`Polyomino.rotate` accepts a ``kick: bool = True`` parameter.
+When ``True`` (the default), boundary kicks are applied via
+:func:`_boundary_kicks`.  When ``False``, only the in-place rotation is
+attempted — the semantics used when kick correction is disabled in the
+game configuration (``GameConfig.kick = False``).
+
 .. _boundary-kicks:
 
 Boundary Kicks: Covariant Rotation
@@ -261,6 +283,27 @@ boundary :math:`\mathcal{B}`, a corrective translation (a *kick*) is
 needed.  Rather than precomputing kick tables for each piece and state
 pair (the SRS approach), the functional approach derives the kick
 algebraically from the rotated piece's bounding box.
+
+**Scope of kicks.**  The ``_boundary_kicks`` generator derives
+candidates solely from violations of the **board boundary** — wall and
+floor/ceiling.  It does *not* generate candidates to escape overlap with
+the locked stack :math:`\mathcal{G}`.  The validity predicate
+:meth:`Grid.check` — which tests both boundary and stack — is applied to
+each candidate: a candidate that is in-bounds but overlaps the stack
+fails at that candidate, and the next is tried.  If all candidates fail,
+rotation fails silently and the piece is unchanged.
+
+This is the correct design.  Kicks that escape stack overlap would
+require finding the minimal translation such that the piece is both
+in-bounds *and* not overlapping :math:`\mathcal{G}`.  This is an
+NP-hard problem in general (the stack has arbitrary shape), the
+analogous problem to the supremum-orbit computation for maximal
+translations — which is also solved inductively, not in closed form.
+Beyond computational hardness, such kicks would produce gameplay
+anomalies: a piece could teleport upward or sideways out of a deep well,
+departing significantly from the original game style.  The bounding-box
+formula is O(1) and exact precisely because the board boundary is a
+convex domain; the stack is not.
 
 Let :math:`P' = \{(x_i', y_i')\}`.  Define the boundary corrections:
 
@@ -274,6 +317,7 @@ Let :math:`P' = \{(x_i', y_i')\}`.  Define the boundary corrections:
    \qquad
    \delta_y = \begin{cases}
      -\min_i y_i' & \text{if } \min_i y_i' < 0 \\
+     (h-1) - \max_i y_i' & \text{if } \max_i y_i' \geq h \\
      0 & \text{otherwise}
    \end{cases}.
 
@@ -288,8 +332,11 @@ priority order:
 The first candidate :math:`(\delta_x', \delta_y')` for which
 :math:`P' + (\delta_x', \delta_y')` satisfies the placement validity
 predicate (in-bounds and not overlapping :math:`\mathcal{G}`) is
-accepted.  If no candidate is valid (typically: the piece would embed in
-the locked stack), rotation fails and the piece is unchanged.
+accepted.  If no candidate is valid — either because the boundary
+correction itself is blocked by the stack, or because the freely-rotated
+in-place position overlaps the stack with no boundary violation — rotation
+fails and the piece is unchanged.  No additional candidates are generated
+for stack-overlap cases (see the **Scope of kicks** note above).
 
 **Covariant derivative analogy.**  In differential geometry, the covariant
 derivative of a vector field :math:`V` along a curve corrects the ordinary
@@ -355,20 +402,35 @@ committed (locked) piece cells.
 This is implemented by :meth:`Grid.check`.
 
 The :class:`Board` class is the Tkinter rendering layer.  It owns
-separate render maps (``dict[Square, canvas_id]`` and
-``dict[Square, Colors]``) but does not hold the occupancy
-:math:`\mathcal{G}`; only :class:`TetraTile` (the game controller)
-writes to and reads from :math:`\mathcal{G}`.
+separate render maps (``_canvas_ids: dict[Square, int]`` mapping squares
+to Tkinter canvas item IDs, and ``_colors: dict[Square, Colors]``) but
+does not hold the occupancy :math:`\mathcal{G}`; only
+:class:`TetraTile` (the game controller) writes to and reads from
+:math:`\mathcal{G}`.
+
+:meth:`Board.render` uses a targeted delta strategy: only the squares
+that changed between the previous and new active-piece positions are
+erased or repainted (O(``piece.ordinal``) per tick).  Locked squares are
+repainted only when the ``locked_dirty=True`` flag is passed — after a
+lock event or row removal that modifies :math:`\mathcal{G}`.
 
 Row-Major Observation
 ~~~~~~~~~~~~~~~~~~~~~
 
 The :class:`GameObservation` dataclass exposes the board state to
-observers and agents as a row-major 2D list: ``board[y][x]``, where
+observers and agents as a row-major nested tuple
+``tuple[tuple[str | None, ...], ...]``: ``board[y][x]``, where
 ``y = 0`` is the bottom row and ``y = height - 1`` is the top row.  This
 matches the standard convention for numpy arrays and ML agent
 consumption.  Note the transposition relative to Tkinter canvas
 coordinates.
+
+The ``current_piece_rotation`` field holds the :math:`C_4` rotation
+index in :math:`\{0,1,2,3\}` (0 = spawn orientation; each increment is
+one additional CW quarter-turn).  It is ``-1`` when no piece is active.
+The value is derived algebraically by :func:`_rotation_state` from the
+current piece squares and the canonical spawn squares via the module-level
+:data:`_ROTATION_TABLE`.
 
 .. _row-removal:
 
@@ -405,9 +467,10 @@ In group-theoretic terms, this is a conditional application of the
 translation :math:`-j \cdot e_y` (downward by :math:`j` units) to the
 sub-polyomino occupying the rows above the :math:`j`-th removed row.
 
-The implementation in :meth:`Grid.remove_and_shift` iterates over
-remaining locked cells in bottom-to-top order and moves each to its new
-position, deleting the old canvas rendering and drawing a new one.
+The implementation in :meth:`TetraTile.remove_full_rows` builds the
+updated occupancy map in a single pass — skipping full rows and shifting
+remaining cells down by the count of full rows below each — then calls
+:meth:`Board.clear` and re-renders from scratch.
 
 .. _extremal-translations:
 
@@ -425,7 +488,7 @@ compute the *supremum of the piece's orbit* under a unit generator:
    \text{move\_right\_max}(P, \mathcal{G})
    &= \sup\{k \geq 0 : P + k e_x
    \;\text{is valid in}\; \mathcal{G}\}, \\
-   \text{hard\_drop}(P, \mathcal{G})
+   \text{full\_drop}(P, \mathcal{G})
    &= \sup\{k \geq 0 : P - k e_y
    \;\text{is valid in}\; \mathcal{G}\}.
 
@@ -542,7 +605,7 @@ The code expresses this structure directly:
    * - Global transition step
      - :meth:`.TetraTile.iterate` — one gravity + lock + row-remove cycle
    * - Row-removal rule :math:`\Phi_{\text{row-remove}}`
-     - :meth:`.Grid.remove_and_shift` (or :meth:`.Board.remove_full_rows`)
+     - :meth:`.TetraTile.remove_full_rows`
    * - External drive :math:`\sigma_t`
      - :class:`.InputHandler` — player or agent sends the eigentransformation
    * - CA oracle / controller
@@ -578,10 +641,11 @@ along the row — a carry-propagation CA.  The game's row removal is the
 instantaneous, non-local equivalent of this :math:`O(w)`-step local
 computation.
 
-In the code, :meth:`.Grid.remove_and_shift` implements the instantaneous
-version: it computes full rows in one pass and shifts remaining cells
-down in a second pass, achieving the same result as the iterated local CA
-in two linear scans rather than :math:`O(w)` CA steps.
+In the code, :meth:`.TetraTile.remove_full_rows` implements the
+instantaneous version: it computes full rows in one pass and shifts
+remaining cells down in a second pass, achieving the same result as the
+iterated local CA in two linear scans rather than :math:`O(w)` CA
+steps.
 
 Analogies with Conway's Game of Life
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -732,8 +796,9 @@ A human player or AI agent sends an :class:`EigenTransformation` to
 
 :class:`HumanInputHandler` and :class:`AgentInputHandler` are coequal
 named subclasses of :class:`InputHandler`.  They contain no overriding
-logic; the subclass exists only as a named entry point for
-``isinstance`` discrimination.  Swapping the handler (human ↔ agent)
+logic; the subclasses exist as named types so that caller code can
+optionally use ``isinstance`` to identify the active frontend without
+needing a separate flag.  Swapping the handler (human ↔ agent)
 transparently changes who controls the game without touching any other
 code path.
 
