@@ -104,6 +104,10 @@ def _build_parser() -> argparse.ArgumentParser:
 def _load_config(args: argparse.Namespace) -> GameConfig:
     """Build :class:`.GameConfig` from CLI args.
 
+    CLI overrides are applied via :meth:`~pydantic.BaseModel.model_copy` so
+    that Pydantic validators run on the new values rather than being bypassed
+    by direct attribute assignment.
+
     :param args: Parsed command-line arguments.
     :returns: Populated :class:`.GameConfig`.
     """
@@ -111,15 +115,24 @@ def _load_config(args: argparse.Namespace) -> GameConfig:
         Path(args.config_file) if args.config_file else None,
         create_default=True,
     )
+
+    board_updates: dict[str, object] = {}
     if args.size is not None:
-        config.board.width = args.size["width"]
-        config.board.height = args.size["height"]
+        board_updates["width"] = args.size["width"]
+        board_updates["height"] = args.size["height"]
     if args.scale is not None:
-        config.board.scale = args.scale
+        board_updates["scale"] = args.scale
+
+    top_updates: dict[str, object] = {}
+    if board_updates:
+        top_updates["board"] = config.board.model_copy(update=board_updates)
     if args.initial_rate is not None:
-        config.initial_rate = args.initial_rate
+        top_updates["initial_rate"] = args.initial_rate
     if args.constant:
-        config.constant = args.constant
+        top_updates["constant"] = True
+
+    if top_updates:
+        config = config.model_copy(update=top_updates)
     return config
 
 

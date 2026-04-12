@@ -210,53 +210,79 @@ class GameObservation:
 # ---------------------------------------------------------------------------
 
 
+def _build_rotation_table() -> dict[str, list[frozenset[Square]]]:
+    """Build the module-level rotation lookup table for :func:`_rotation_state`.
+
+    For each tetromino type, generates the four rotation states in canonical
+    (spawn-origin) frame and stores them as a list indexed by rotation index.
+    Built once at module load; used by :func:`_rotation_state` for O(4)
+    worst-case lookup instead of O(28) linear search.
+
+    The local-frame squares at each state are computed by translating the
+    spawn squares to origin ``(0, 0)`` — that is, subtracting the canonical
+    origin from every square.  Because both the piece's current origin and the
+    canonical origin share the same fractional part (they differ only by an
+    integer vector), the difference ``piece.origin - canonical_origin`` is
+    always an exact integer, making the translation lossless.
+
+    :returns: Dict mapping piece name → list of four ``frozenset[Square]``
+        (one per C₄ rotation state, index 0 = spawn orientation).
+    """
+    table: dict[str, list[frozenset[Square]]] = {}
+    for t in TetrominoType:
+        cx, cy = t.value.origin
+        squares: frozenset[Square] = t.value.squares
+        states: list[frozenset[Square]] = []
+        for _ in range(4):
+            # Translate to local frame: subtract canonical origin (exact integer result)
+            local = frozenset(Square(s.x - int(cx), s.y - int(cy)) for s in squares)
+            states.append(local)
+            # Apply one CW quarter-turn about the canonical origin
+            squares = frozenset(Square(int(s.y - cy + cx), int(-(s.x - cx) + cy)) for s in squares)
+        table[t.value.name] = states
+    return table
+
+
 def _rotation_state(piece: "Polyomino") -> int:
     """Derive the :math:`C_4` rotation index of a piece from its current squares.
 
-    Computes which of the four canonical rotation states (0–3, CW) the piece
-    is in by translating the current squares back to local frame (using the
-    piece's origin) and comparing against each rotation of the spawn-state
-    squares for that piece type.  Returns ``-1`` if the piece name is not
-    a recognised tetromino type.
+    Translates the piece's board-frame squares to canonical local frame
+    (by subtracting the canonical origin) and looks up the result in the
+    pre-built :data:`_ROTATION_TABLE`.  The lookup is O(4) worst case.
+
+    The translation ``piece.origin - canonical_origin`` is an exact integer
+    vector because both origins share the same :class:`~decimal.Decimal`
+    fractional part (0 for integer-centre pieces, ``-0.5`` for half-integer
+    ones) and differ only by the integer spawn displacement.
 
     :param piece: The :class:`Polyomino` to inspect.
-    :returns: Rotation index in :math:`\\{0, 1, 2, 3\\}`, or ``-1`` if unknown.
+    :returns: Rotation index in :math:`\\{0, 1, 2, 3\\}`, or ``-1`` if the
+        piece name is not a recognised :class:`TetrominoType`.
     """
-    # Find the canonical (spawn) squares for this piece name
-    canonical: frozenset[Square] | None = None
+    states = _ROTATION_TABLE.get(piece.name)
+    if states is None:
+        return -1
+
+    # Find the canonical origin for this piece type
     canonical_origin: tuple[D, D] | None = None
     for t in TetrominoType:
         if t.value.name == piece.name:
-            canonical = t.value.squares
             canonical_origin = t.value.origin
             break
-    if canonical is None or canonical_origin is None:
+    if canonical_origin is None:
         return -1
 
-    # Translate current squares to local frame: subtract current origin
-    ox, oy = piece.origin
-
-    def _localise(squares: frozenset[Square], pivot: tuple[D, D]) -> frozenset[Square]:
-        px, py = pivot
-        return frozenset(Square(s.x - int(px), s.y - int(py)) for s in squares)
-
-    local_current = _localise(piece.squares, piece.origin)
-
-    # Generate the 4 rotations of canonical squares and compare
+    # Translate piece squares to canonical local frame.
+    # piece.origin - canonical_origin is an exact integer vector.
     cx, cy = canonical_origin
-    rotated = canonical
-    for state in range(4):
-        local_canonical = _localise(rotated, canonical_origin)
-        if local_current == local_canonical:
+    ox, oy = piece.origin
+    dx = int(ox - cx)
+    dy = int(oy - cy)
+    local = frozenset(Square(s.x - dx, s.y - dy) for s in piece.squares)
+
+    for state, state_squares in enumerate(states):
+        if local == state_squares:
             return state
-        # Apply one CW quarter-turn: (dx, dy) -> (dy, -dx) about canonical_origin
-        rotated = frozenset(
-            Square(
-                int(1 * (s.y - cy) + cx),
-                int(-1 * (s.x - cx) + cy),
-            )
-            for s in rotated
-        )
     return -1
 
 
@@ -775,6 +801,9 @@ def used_keys() -> list[str]:
 
 
 tetrominoes: tuple[Polyomino, ...] = tuple(t.polyomino for t in TetrominoType)
+
+# Initialise module-level lookup tables that depend on TetrominoType.
+_ROTATION_TABLE = _build_rotation_table()
 
 
 # ---------------------------------------------------------------------------
@@ -1922,14 +1951,3 @@ class TetraTile(tk.Frame):
             "rows_by_count": [var.get() for var in self.removed_by_count],
             "pieces_by_type": {name: var.get() for name, var in self.used.items() if name != "total"},
         }
-
-
-class Preferences(tk.Frame):
-    """Dialog for editing game preferences."""
-
-    def __init__(self) -> None:
-        """Initialize the preferences dialog.
-
-        :raises NotImplementedError: Preferences dialog is not yet implemented.
-        """
-        raise NotImplementedError("Cannot create preferences dialog")

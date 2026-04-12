@@ -14,6 +14,7 @@ from tetratile import (
     Square,
     Translation,
     _boundary_kicks,
+    _rotation_state,
     mix_with_black,
     tetrominoes,
 )
@@ -292,3 +293,90 @@ class TestBoundaryKicks:
             assert piece is not None
             kicks = list(_boundary_kicks(piece, self.grid))
             assert len(kicks) <= 4
+
+
+class TestRotationState:
+    """Tests for _rotation_state() — derives C₄ index from piece squares."""
+
+    @pytest.fixture(autouse=True)
+    def setup_grid(self) -> None:
+        """Set up a standard 10×22 grid."""
+        self.grid = Grid(10, 22)
+
+    def test_spawn_state_is_zero_for_all_pieces(self) -> None:
+        """Every piece at spawn orientation reports rotation state 0."""
+        for piece_type in tetrominoes:
+            piece = piece_type.translate(Translation(5, 11), self.grid)
+            assert piece is not None
+            assert _rotation_state(piece) == 0, f"{piece_type.name} spawn state should be 0"
+
+    @pytest.mark.parametrize("piece_idx", [i for i in range(len(tetrominoes)) if tetrominoes[i].name != "o"])
+    def test_cw_rotations_cycle_0_1_2_3(self, piece_idx: int) -> None:
+        """Four successive CW rotations produce states 1, 2, 3, 0 in order (non-O pieces)."""
+        piece_type = tetrominoes[piece_idx]
+        piece = piece_type.translate(Translation(5, 11), self.grid)
+        assert piece is not None
+
+        current = piece
+        for expected in [1, 2, 3, 0]:
+            rotated = current.rotate(Rotation(1), self.grid)
+            assert rotated is not None, f"{piece_type.name} CW rotation failed at state {expected}"
+            current = rotated
+            assert _rotation_state(current) == expected, (
+                f"{piece_type.name} expected state {expected}, got {_rotation_state(current)}"
+            )
+
+    @pytest.mark.parametrize("piece_idx", [i for i in range(len(tetrominoes)) if tetrominoes[i].name != "o"])
+    def test_ccw_rotations_cycle_3_2_1_0(self, piece_idx: int) -> None:
+        """Four successive CCW rotations produce states 3, 2, 1, 0 in order (non-O pieces)."""
+        piece_type = tetrominoes[piece_idx]
+        piece = piece_type.translate(Translation(5, 11), self.grid)
+        assert piece is not None
+
+        current = piece
+        for expected in [3, 2, 1, 0]:
+            rotated = current.rotate(Rotation(-1), self.grid)
+            assert rotated is not None, f"{piece_type.name} CCW rotation failed at state {expected}"
+            current = rotated
+            assert _rotation_state(current) == expected, (
+                f"{piece_type.name} CCW expected state {expected}, got {_rotation_state(current)}"
+            )
+
+    def test_o_piece_rotation_state_always_zero(self) -> None:
+        """O piece always reports rotation state 0 (all four states are identical)."""
+        o_piece = next(t for t in tetrominoes if t.name == "o")
+        piece = o_piece.translate(Translation(5, 11), self.grid)
+        assert piece is not None
+        # O is rotationally symmetric: rotate() returns the same-squares piece or None
+        assert _rotation_state(piece) == 0
+        rotated = piece.rotate(Rotation(1), self.grid)
+        # Whether or not O returns None, the state is 0
+        if rotated is not None:
+            assert _rotation_state(rotated) == 0
+
+    def test_unknown_piece_name_returns_minus_one(self) -> None:
+        """_rotation_state returns -1 for a piece with an unrecognised name."""
+        import decimal
+
+        unknown = Polyomino(
+            squares=frozenset({Square(5, 11), Square(6, 11)}),
+            origin=(decimal.Decimal(5), decimal.Decimal(11)),
+            colors=tetrominoes[0].colors,
+            name="X",
+        )
+        assert _rotation_state(unknown) == -1
+
+    def test_all_four_states_distinct_for_asymmetric_pieces(self) -> None:
+        """Asymmetric pieces (T, L, J, Z, S) have four distinct rotation states."""
+        asymmetric = [t for t in tetrominoes if t.name in ("T", "L", "J", "Z", "S")]
+        for piece_type in asymmetric:
+            piece = piece_type.translate(Translation(5, 11), self.grid)
+            assert piece is not None
+            states = [_rotation_state(piece)]
+            current = piece
+            for _ in range(3):
+                rotated = current.rotate(Rotation(1), self.grid)
+                assert rotated is not None, f"{piece_type.name} rotation failed"
+                current = rotated
+                states.append(_rotation_state(current))
+            assert len(set(states)) == 4, f"{piece_type.name} rotation states not all distinct: {states}"

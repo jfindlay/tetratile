@@ -117,3 +117,111 @@ class TestBoardHighlightFullRows:
         full_rows = board.highlight_full_rows(grid)
 
         assert sorted(full_rows) == [0, 1]
+
+
+class TestBoardRenderDelta:
+    """Tests for the targeted (delta) rendering behaviour of Board.render().
+
+    Verifies that:
+    - Active-piece squares are painted and erased correctly without touching
+      locked squares that did not change.
+    - Locked squares are only repainted when ``locked_dirty=True``.
+    - Moving the active piece only modifies the vacated and newly-occupied squares.
+    """
+
+    @pytest.fixture
+    def board(self, config: GameConfig) -> Board:
+        """Create a Board with a mocked parent widget."""
+        mock_parent = MagicMock()
+        return Board(config, mock_parent, config.board.width, config.board.height)
+
+    @pytest.fixture
+    def grid(self, config: GameConfig) -> Grid:
+        """Create a fresh Grid."""
+        return Grid(config.board.width, config.board.height)
+
+    def test_locked_squares_not_painted_without_locked_dirty(self, board: Board, grid: Grid) -> None:
+        """Locked squares in grid are NOT painted when locked_dirty is False (default)."""
+        grid[Square(0, 0)] = "T"
+        grid[Square(1, 0)] = "T"
+
+        board.render(grid, None)  # locked_dirty=False by default
+
+        assert Square(0, 0) not in board._canvas_ids
+        assert Square(1, 0) not in board._canvas_ids
+
+    def test_locked_squares_painted_with_locked_dirty(self, board: Board, grid: Grid) -> None:
+        """Locked squares in grid ARE painted when locked_dirty=True."""
+        grid[Square(0, 0)] = "T"
+        grid[Square(1, 0)] = "T"
+
+        board.render(grid, None, locked_dirty=True)
+
+        assert Square(0, 0) in board._canvas_ids
+        assert Square(1, 0) in board._canvas_ids
+
+    def test_moving_piece_erases_vacated_squares(self, board: Board, grid: Grid) -> None:
+        """After the piece moves right, the vacated left squares are erased."""
+        piece = tetrominoes[3]  # T piece
+        pos1 = piece.translate(Translation(4, 11), grid)
+        assert pos1 is not None
+
+        board.render(grid, pos1)
+        squares_before = set(pos1.squares)
+
+        pos2 = pos1.translate(Translation(1, 0), grid)
+        assert pos2 is not None
+        board.render(grid, pos2)
+
+        vacated = squares_before - pos2.squares
+        still_active = squares_before & pos2.squares
+
+        # Vacated squares must be erased (not in canvas_ids)
+        for s in vacated:
+            assert s not in board._canvas_ids, f"Vacated square {s} still on canvas"
+
+        # Squares still under the piece must remain painted
+        for s in still_active:
+            assert s in board._canvas_ids, f"Persistent square {s} was erased"
+
+    def test_active_piece_tracking_updated_after_render(self, board: Board, grid: Grid) -> None:
+        """_active_squares is updated to the new piece position after render."""
+        piece = tetrominoes[3]
+        pos1 = piece.translate(Translation(4, 11), grid)
+        assert pos1 is not None
+
+        board.render(grid, pos1)
+        assert board._active_squares == pos1.squares
+
+        pos2 = pos1.translate(Translation(1, 0), grid)
+        assert pos2 is not None
+        board.render(grid, pos2)
+        assert board._active_squares == pos2.squares
+
+    def test_clear_resets_active_squares(self, board: Board, grid: Grid) -> None:
+        """board.clear() resets _active_squares to the empty frozenset."""
+        piece = tetrominoes[3]
+        moved = piece.translate(Translation(4, 11), grid)
+        assert moved is not None
+
+        board.render(grid, moved)
+        assert len(board._active_squares) > 0
+
+        board.clear()
+        assert board._active_squares == frozenset()
+
+    def test_locked_dirty_erases_stale_locked_squares(self, board: Board, grid: Grid) -> None:
+        """When locked_dirty=True, squares removed from the grid are erased."""
+        # Paint two squares as locked
+        grid[Square(0, 0)] = "T"
+        grid[Square(1, 0)] = "T"
+        board.render(grid, None, locked_dirty=True)
+        assert Square(0, 0) in board._canvas_ids
+        assert Square(1, 0) in board._canvas_ids
+
+        # Remove one square from grid, re-render with locked_dirty
+        grid[Square(0, 0)] = None
+        board.render(grid, None, locked_dirty=True)
+
+        assert Square(0, 0) not in board._canvas_ids
+        assert Square(1, 0) in board._canvas_ids
