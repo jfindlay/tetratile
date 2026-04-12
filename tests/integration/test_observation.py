@@ -214,10 +214,10 @@ class TestRandomAgent:
         assert isinstance(action, Action)
 
     def test_select_action_returns_movement_action(self) -> None:
-        """RandomAgent only returns movement actions (not pause/hard-drop/lock)."""
+        """RandomAgent only returns movement actions (not pause/full-drop/lock)."""
         agent = RandomAgent()
         obs = self._make_obs()
-        non_movement = {Action.toggle_pause, Action.hard_drop, Action.lock_piece, Action.move_left_max, Action.move_right_max}
+        non_movement = {Action.toggle_pause, Action.full_drop, Action.lock_piece, Action.move_left_max, Action.move_right_max}
         for _ in range(50):
             action = agent.select_action(obs)
             assert action not in non_movement

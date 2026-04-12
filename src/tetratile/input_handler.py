@@ -11,7 +11,7 @@ lives in one place.  Lock and pause actions call :meth:`.TetraTile.lock_piece`
 and :meth:`.TetraTile.pause` respectively.
 
 The extremal-translation methods :meth:`move_left_max`, :meth:`move_right_max`,
-and :meth:`hard_drop` compute the **supremum of the piece's orbit** under a
+and :meth:`full_drop` compute the **supremum of the piece's orbit** under a
 unit generator; see :ref:`extremal-translations` in ``docs/mathematics.rst``
 for the mathematical treatment.
 """
@@ -87,7 +87,7 @@ class InputHandler:
 
         return bool(self._game.move_piece(Transformation(EigenTransformation.vertical, 1)))
 
-    def hard_drop(self) -> None:
+    def full_drop(self) -> None:
         """Drop the active piece to its lowest reachable position.
 
         Computes the **supremum of the orbit** of the active piece under the

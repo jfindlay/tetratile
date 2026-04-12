@@ -39,7 +39,7 @@ concept directly.
 - ``Rotation(steps)``: an element of :math:`C_4`.
   ``steps=+1`` is CW; ``steps=-1`` is CCW.
 
-The operations ``move_left_max``, ``move_right_max``, and ``hard_drop``
+The operations ``move_left_max``, ``move_right_max``, and ``full_drop``
 are **derived** (orbit suprema), not generators.  They belong in
 ``InputHandler``, not in ``EigenTransformation``.
 

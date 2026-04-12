@@ -213,7 +213,7 @@ class ConfigUI(tk.Toplevel):
             ("rotate_left", "Rotate Left"),
             ("rotate_right", "Rotate Right"),
             ("down", "Soft Drop"),
-            ("drop", "Hard Drop"),
+            ("drop", "Full Drop"),
             ("lock", "Lock Piece"),
         ]
 

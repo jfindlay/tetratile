@@ -195,7 +195,7 @@ Eigentransformations vs. Derived Operations
 
 An *eigentransformation* is an atomic generator of :math:`G` — an
 irreducible group element from which all other valid moves are composed.
-The operations ``move_left_max``, ``move_right_max``, and ``hard_drop``
+The operations ``move_left_max``, ``move_right_max``, and ``full_drop``
 are *not* eigentransformations: they are derived operations that compute
 the supremum of the piece's orbit under repeated generator application
 (see :ref:`extremal-translations`).  They belong in the
@@ -414,7 +414,7 @@ position, deleting the old canvas rendering and drawing a new one.
 Extremal Translations: Orbit Suprema
 --------------------------------------
 
-The operations ``move_left_max``, ``move_right_max``, and ``hard_drop``
+The operations ``move_left_max``, ``move_right_max``, and ``full_drop``
 compute the *supremum of the piece's orbit* under a unit generator:
 
 .. math::
@@ -894,7 +894,7 @@ The codebase embodies the following mathematical design principles.
    :math:`\mathbb{Z}^N`.
 
 5. **Derived operations are not generators.**
-   ``move_left_max``, ``move_right_max``, and ``hard_drop`` are orbit
+   ``move_left_max``, ``move_right_max``, and ``full_drop`` are orbit
    suprema — derived from generators by induction.  They live in
    :class:`InputHandler`, not in the :class:`EigenTransformation` type
    alias.

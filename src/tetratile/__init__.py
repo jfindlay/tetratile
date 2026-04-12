@@ -1868,7 +1868,7 @@ class TetraTile(tk.Frame):
         "rotate_left": "rotate_ccw",
         "rotate_right": "rotate_cw",
         "down": "soft_drop",
-        "drop": "hard_drop",
+        "drop": "full_drop",
         "lock": "lock_piece",
     }
 
@@ -1890,7 +1890,7 @@ class TetraTile(tk.Frame):
             rotate_left       →  rotate_ccw
             rotate_right      →  rotate_cw
             down              →  soft_drop
-            drop              →  hard_drop
+            drop              →  full_drop
             lock              →  lock_piece
         """
 

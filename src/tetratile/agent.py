@@ -50,7 +50,7 @@ class Action(enum.StrEnum):
     :attr rotate_cw: Rotate piece one CW quarter-turn (:math:`r`).
     :attr rotate_ccw: Rotate piece one CCW quarter-turn (:math:`r^{-1}`).
     :attr soft_drop: Translate piece one step down (:math:`-e_y`, gravity).
-    :attr hard_drop: Drop piece to its lowest reachable position (orbit supremum under :math:`-e_y`).
+    :attr full_drop: Drop piece to its lowest reachable position (orbit supremum under :math:`-e_y`).
     :attr move_left_max: Translate to leftmost reachable position (orbit supremum under :math:`-e_x`).
     :attr move_right_max: Translate to rightmost reachable position (orbit supremum under :math:`+e_x`).
     :attr lock_piece: Lock piece in place without dropping.
@@ -62,7 +62,7 @@ class Action(enum.StrEnum):
     rotate_cw = "rotate_cw"
     rotate_ccw = "rotate_ccw"
     soft_drop = "soft_drop"
-    hard_drop = "hard_drop"
+    full_drop = "full_drop"
     move_left_max = "move_left_max"
     move_right_max = "move_right_max"
     lock_piece = "lock_piece"
@@ -95,7 +95,7 @@ class Agent(ABC):
 class RandomAgent(Agent):
     """Agent that samples uniformly at random from a fixed movement-action alphabet.
 
-    Only movement actions are included in the sample pool — ``hard_drop``,
+    Only movement actions are included in the sample pool — ``full_drop``,
     ``lock_piece``, ``move_left_max``, ``move_right_max``, and
     ``toggle_pause`` are excluded to avoid immediately terminating the game
     or disrupting the gravity loop.
