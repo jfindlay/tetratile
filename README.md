@@ -100,5 +100,7 @@ Events are stored as JSON with:
 ## TODO
 
 - [ ] Project package/module reorganization?
+- [ ] Test reevaluation
+  - Integration tests should not depend on package installed on host system
 - [ ] Configurably allow monomino, domino, trominoes(, pentominoes, ...?)
 - [ ] AI

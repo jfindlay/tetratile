@@ -69,7 +69,12 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("-V", "--version", action="version", version=f"%(prog)s {_VERSION}")
-    parser.add_argument("-c", "--config-file", type=Path, help="Directory containing config file")
+    parser.add_argument(
+        "-c",
+        "--config-file",
+        type=Path,
+        help="App config directory (default: ~/.config/tetratile)",
+    )
     parser.add_argument(
         "-s",
         "--size",
@@ -103,7 +108,7 @@ def _load_config(args: argparse.Namespace) -> GameConfig:
     :returns: Populated :class:`.GameConfig`.
     """
     config = GameConfig.from_file(
-        Path(args.config_file) if args.config_file else Path.cwd(),
+        Path(args.config_file) if args.config_file else None,
         create_default=True,
     )
     if args.size is not None:
