@@ -1,6 +1,5 @@
 """Integration tests for tetratile game."""
 
-import copy
 import random
 from unittest.mock import MagicMock
 
@@ -8,7 +7,8 @@ import pytest
 
 from tetratile import (
     Grid,
-    Tetromino,
+    Polyomino,
+    Translation,
     tetrominoes,
 )
 from tetratile.config import GameConfig
@@ -27,17 +27,22 @@ def grid(config: GameConfig) -> Grid:
 
 
 @pytest.fixture
-def tetromino(grid: Grid) -> Tetromino:
-    """Create a random tetromino centered on the grid."""
-    t = copy.deepcopy(random.choice(tetrominoes))
-    t.translate([grid.width // 2, grid.height // 2], grid)
-    return t
+def tetromino(grid: Grid) -> Polyomino:
+    """Create a random tetromino translated to the grid centre."""
+    p = random.choice(tetrominoes)
+    moved = p.translate(Translation(grid.width // 2, grid.height // 2), grid)
+    assert moved is not None
+    return moved
 
 
 @pytest.fixture
-def all_tetrominoes(grid: Grid) -> list[Tetromino]:
-    """Create all tetromino types centered on the grid."""
-    return [copy.deepcopy(t).translate([grid.width // 2, grid.height // 2], grid) for t in tetrominoes]
+def all_tetrominoes(grid: Grid) -> list[Polyomino]:
+    """Create all tetromino types translated to the grid centre."""
+    result = []
+    for p in tetrominoes:
+        moved = p.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        result.append(moved)
+    return result
 
 
 @pytest.fixture

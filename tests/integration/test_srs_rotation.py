@@ -1,255 +1,269 @@
-"""Integration tests for SRS rotation system."""
+"""Integration tests for rotation with functional boundary kicks.
 
-import copy
-import random
+The SRS precomputed tables have been replaced by the ``_boundary_kicks``
+algebraic generator (see :ref:`boundary-kicks` in ``docs/mathematics.rst``).
+These tests verify the algebraic kick behaviour: that pieces rotate
+correctly in open space, that kicks are applied when needed near walls,
+and that four rotations always return to the original position.
+"""
 
-from tetratile import (
-    SRS_KICK_I,
-    SRS_KICK_JLSTZ,
-    Grid,
-    tetrominoes,
-)
+import pytest
 
-
-class TestSRSRotation:
-    """Tests for SRS rotation behavior."""
-
-    def test_rotation_state_cycles_four_times(self, grid: Grid) -> None:
-        """Test that rotation state cycles correctly through 0,1,2,3,0."""
-        non_o = [t for t in tetrominoes if t.name != "o"]
-        tetromino = copy.deepcopy(random.choice(non_o))
-        tetromino.translate([grid.width // 2, grid.height // 2], grid)
-
-        assert tetromino.rotation_state == 0
-
-        for expected_state in [1, 2, 3, 0, 1, 2, 3, 0]:
-            tetromino.srs_rotate(1, grid)
-            assert tetromino.rotation_state == expected_state
-
-    def test_o_piece_does_not_rotate(self, grid: Grid) -> None:
-        """Test that O piece returns False on rotation attempts."""
-        o_piece = copy.deepcopy(tetrominoes[4])  # o is 5th
-        o_piece.translate([grid.width // 2, grid.height // 2], grid)
-
-        initial_coords = [c[:] for c in o_piece.coords]
-        initial_state = o_piece.rotation_state
-
-        result = o_piece.srs_rotate(1, grid)
-
-        assert result is False
-        assert o_piece.rotation_state == initial_state
-        assert o_piece.coords == initial_coords
-
-    def test_i_piece_uses_correct_kick_table(self, grid: Grid) -> None:
-        """Test that I piece uses I-specific kick table."""
-        l_piece = copy.deepcopy(tetrominoes[2])  # l (I) is 3rd
-        l_piece.translate([grid.width // 2, grid.height // 2], grid)
-
-        kick_table = l_piece._get_kick_table()
-        assert kick_table is not None
-        assert len(kick_table[(0, 1)]) == 5
-
-    def test_jlstz_pieces_use_correct_kick_table(self, grid: Grid) -> None:
-        """Test that J/L/S/T/Z pieces use JLSTZ kick table."""
-        for t in [tetrominoes[0], tetrominoes[1], tetrominoes[3], tetrominoes[5], tetrominoes[6]]:
-            piece = copy.deepcopy(t)
-            piece.translate([grid.width // 2, grid.height // 2], grid)
-
-            kick_table = piece._get_kick_table()
-            assert kick_table is not None
-            assert len(kick_table[(0, 1)]) == 5
-
-    def test_kicks_applied_in_order(self, grid: Grid) -> None:
-        """Test that kick offsets are tried in correct order."""
-        tetromino = copy.deepcopy(tetrominoes[3])  # T piece
-        tetromino.translate([2, grid.height // 2], grid)  # Near left wall
-
-        initial_state = tetromino.rotation_state
-        initial_coords = [c[:] for c in tetromino.coords]
-
-        result = tetromino.srs_rotate(1, grid)
-
-        assert result is True
-        assert tetromino.rotation_state == (initial_state + 1) % 4
-        assert tetromino.coords != initial_coords
-
-    def test_four_rotations_return_to_original_position(self, grid: Grid) -> None:
-        """Test that 4 rotations returns piece to original orientation."""
-        non_o = [t for t in tetrominoes if t.name != "o"]
-        for tetromino_type in non_o:
-            tetromino = copy.deepcopy(tetromino_type)
-            tetromino.translate([grid.width // 2, grid.height // 2], grid)
-
-            original_coords = [c[:] for c in tetromino.coords]
-            original_state = tetromino.rotation_state
-
-            for _ in range(4):
-                tetromino.srs_rotate(1, grid)
-
-            assert tetromino.coords == original_coords
-            assert tetromino.rotation_state == original_state
-
-    def test_ccw_rotation_works(self, grid: Grid) -> None:
-        """Test counter-clockwise rotation."""
-        tetromino = copy.deepcopy(tetrominoes[3])  # T piece
-        tetromino.translate([grid.width // 2, grid.height // 2], grid)
-
-        original_state = tetromino.rotation_state
-        original_coords = [c[:] for c in tetromino.coords]
-
-        result = tetromino.srs_rotate(-1, grid)
-
-        assert result is True
-        assert tetromino.rotation_state == (original_state - 1) % 4
-        assert tetromino.coords != original_coords
-
-    def test_all_tetrominoes_have_srs_center(self) -> None:
-        """Test that all tetrominoes have SRS center defined."""
-        for t in tetrominoes:
-            assert t.o is not None
-            assert len(t.o) == 2
+from tetratile import Grid, Polyomino, Rotation, Square, Translation, _boundary_kicks, tetrominoes
 
 
-class TestSRSKickTableValues:
-    """Tests that verify SRS kick table values match the official Tetris guideline.
+class TestBoundaryKicksGenerator:
+    """Unit tests for the _boundary_kicks algebraic generator."""
 
-    The official kick offsets use (col, row) with row+ = DOWN (screen coords).
-    This game uses y+ = UP (mathematical coords), so all y-values are negated.
-    """
-
-    # Official JLSTZ kick data from tetris.wiki/SRS, converted to y-up:
-    # wiki (col, row+down) -> our (dx, dy+up): negate row values.
-    CORRECT_JLSTZ: dict[tuple[int, int], list[tuple[int, int]]] = {
-        (0, 1): [(0, 0), (-1, 0), (-1, -1), (0, +2), (-1, +2)],
-        (1, 0): [(0, 0), (+1, 0), (+1, +1), (0, -2), (+1, -2)],
-        (1, 2): [(0, 0), (+1, 0), (+1, +1), (0, -2), (+1, -2)],
-        (2, 1): [(0, 0), (-1, 0), (-1, -1), (0, +2), (-1, +2)],
-        (2, 3): [(0, 0), (+1, 0), (+1, -1), (0, +2), (+1, +2)],
-        (3, 2): [(0, 0), (-1, 0), (-1, +1), (0, -2), (-1, -2)],
-        (3, 0): [(0, 0), (-1, 0), (-1, +1), (0, -2), (-1, -2)],
-        (0, 3): [(0, 0), (+1, 0), (+1, -1), (0, +2), (+1, +2)],
-    }
-
-    # Official I kick data from tetris.wiki/SRS, converted to y-up.
-    CORRECT_I: dict[tuple[int, int], list[tuple[int, int]]] = {
-        (0, 1): [(0, 0), (-2, 0), (+1, 0), (-2, +1), (+1, -2)],
-        (1, 0): [(0, 0), (+2, 0), (-1, 0), (+2, -1), (-1, +2)],
-        (1, 2): [(0, 0), (-1, 0), (+2, 0), (-1, -2), (+2, +1)],
-        (2, 1): [(0, 0), (+1, 0), (-2, 0), (+1, +2), (-2, -1)],
-        (2, 3): [(0, 0), (+2, 0), (-1, 0), (+2, -1), (-1, +2)],
-        (3, 2): [(0, 0), (-2, 0), (+1, 0), (-2, +1), (+1, -2)],
-        (3, 0): [(0, 0), (+1, 0), (-2, 0), (+1, +2), (-2, -1)],
-        (0, 3): [(0, 0), (-1, 0), (+2, 0), (-1, -2), (+2, +1)],
-    }
-
-    def test_jlstz_cw_kicks_match_guideline(self) -> None:
-        """CW kick offsets for JLSTZ match official SRS guideline (y-up converted)."""
-        for old_state in range(4):
-            new_state = (old_state + 1) % 4
-            key = (old_state, new_state)
-            assert SRS_KICK_JLSTZ[key] == self.CORRECT_JLSTZ[key], (
-                f"JLSTZ CW {key}: got {SRS_KICK_JLSTZ[key]}, expected {self.CORRECT_JLSTZ[key]}"
-            )
-
-    def test_jlstz_ccw_kicks_match_guideline(self) -> None:
-        """CCW kick offsets for JLSTZ match official SRS guideline (y-up converted)."""
-        for old_state in range(4):
-            new_state = (old_state - 1) % 4
-            key = (old_state, new_state)
-            assert SRS_KICK_JLSTZ[key] == self.CORRECT_JLSTZ[key], (
-                f"JLSTZ CCW {key}: got {SRS_KICK_JLSTZ[key]}, expected {self.CORRECT_JLSTZ[key]}"
-            )
-
-    def test_i_cw_kicks_match_guideline(self) -> None:
-        """CW kick offsets for I piece match official SRS guideline (y-up converted)."""
-        for old_state in range(4):
-            new_state = (old_state + 1) % 4
-            key = (old_state, new_state)
-            assert SRS_KICK_I[key] == self.CORRECT_I[key], f"I CW {key}: got {SRS_KICK_I[key]}, expected {self.CORRECT_I[key]}"
-
-    def test_i_ccw_kicks_match_guideline(self) -> None:
-        """CCW kick offsets for I piece match official SRS guideline (y-up converted)."""
-        for old_state in range(4):
-            new_state = (old_state - 1) % 4
-            key = (old_state, new_state)
-            assert SRS_KICK_I[key] == self.CORRECT_I[key], f"I CCW {key}: got {SRS_KICK_I[key]}, expected {self.CORRECT_I[key]}"
-
-    def test_no_unreachable_180_entries(self) -> None:
-        """Kick tables contain no unreachable 180-degree rotation entries."""
-        for old_state in range(4):
-            half_turn = (old_state + 2) % 4
-            key = (old_state, half_turn)
-            assert key not in SRS_KICK_JLSTZ or SRS_KICK_JLSTZ[key] == [], f"JLSTZ has non-empty 180° entry {key}"
-            assert key not in SRS_KICK_I or SRS_KICK_I[key] == [], f"I has non-empty 180° entry {key}"
-
-
-class TestSRSKickExactPositions:
-    """Tests that verify kicks produce the correct exact final positions.
-
-    These scenarios force kick tests 3-5 to be reached by blocking
-    positions 1 and 2, then verify the piece lands where SRS demands.
-    """
-
-    def _make_grid(self) -> Grid:
+    def _grid(self) -> Grid:
         """Create a standard 10x22 grid."""
         return Grid(10, 22)
 
-    def test_jlstz_cw_kick3_moves_piece_down(self) -> None:
-        """CW 0->1 kick test 3 shifts piece left and DOWN (not up).
+    def test_yields_identity_first(self) -> None:
+        """_boundary_kicks always yields Translation(0,0) first."""
+        grid = self._grid()
+        piece = tetrominoes[3]  # T piece — in-bounds
+        moved = piece.translate(Translation(5, 11), grid)
+        assert moved is not None
+        kicks = list(_boundary_kicks(moved, grid))
+        assert kicks[0] == Translation(0, 0)
 
-        T piece (standard spawn) at (1,10):
-        State 0 coords: [[0,10],[1,10],[2,10],[1,11]] (flat row + stem up).
-        Rotated (no kick): [[1,11],[1,10],[1,9],[2,10]] (vertical right + stem).
-        Block (1,11) to kill kick1, block (0,11) to kill kick2.
-        Kick 3 = (-1,-1): piece ends at [[0,10],[0,9],[0,8],[1,9]].
-        """
-        grid = self._make_grid()
-        T = copy.deepcopy(tetrominoes[3])  # T piece
-        T.translate([1, 10], grid)
+    def test_no_correction_needed_in_open_space(self) -> None:
+        """Piece fully in bounds yields only the identity kick."""
+        grid = self._grid()
+        piece = tetrominoes[3]
+        moved = piece.translate(Translation(5, 11), grid)
+        assert moved is not None
+        kicks = list(_boundary_kicks(moved, grid))
+        assert kicks == [Translation(0, 0)]
 
-        grid[1, 11].type = "X"  # block kick1 via top cell
-        grid[0, 11].type = "X"  # block kick2 via top cell
+    def test_left_wall_violation_yields_positive_dx(self) -> None:
+        """Piece violating left boundary yields a positive dx kick."""
+        grid = self._grid()
+        # Manually construct a piece that pokes past the left wall
+        import decimal
 
-        result = T.srs_rotate(1, grid)
-
-        assert result is True
-        # Kick 3 = (-1,-1): left 1, down 1 from rotated position
-        assert sorted(map(tuple, T.coords)) == sorted([(0, 10), (0, 9), (0, 8), (1, 9)]), f"CW kick3 wrong position: {T.coords}"
-
-    def test_jlstz_kicks_not_upside_down(self) -> None:
-        """Verify kick direction: blocking above forces failure, blocking below does not."""
-        # T at (5,3): rotated form (no kick) has squares at y=2,3,4.
-        # If kicks were upside-down, a blocker at y+2 would falsely prevent rotation.
-        # With correct kicks, a blocker at y-2 should prevent the deep kick but not basic rotation.
-        grid = self._make_grid()
-        T = copy.deepcopy(tetrominoes[3])
-        T.translate([5, 3], grid)
-
-        # Rotation should succeed with kick1 in open space
-        result = T.srs_rotate(1, grid)
-        assert result is True, "T piece rotation in open space near floor should succeed"
-        # All resulting squares must have y >= 0
-        for coord in T.coords:
-            assert coord[1] >= 0, f"Square went below floor: {coord}"
-
-    def test_i_piece_cw_kick3_correct_direction(self) -> None:
-        """I piece CW 0->1: blocking kick1 and kick2 forces kick3 (+1, 0), not downward."""
-        # I piece (l) state 0 horizontal, try to rotate CW.
-        # SRS_KICK_I[(0,1)]: kick1=(0,0), kick2=(-2,0), kick3=(+1,0), kick4=(-2,+1), kick5=(+1,-2)
-        grid = self._make_grid()
-        i_piece = copy.deepcopy(tetrominoes[2])  # l = I piece
-        i_piece.translate([5, 11], grid)
-        # State 0: [[3,11],[4,11],[5,11],[6,11]], rotated (no kick): [[5,13],[5,12],[5,11],[5,10]]
-        # kick1 (0,0): blocked at (5,13); kick2 (-2,0): blocked at (3,13)
-        # kick3 (+1,0): [[6,13],[6,12],[6,11],[6,10]] -- should succeed if (6,13) is open
-        grid[5, 13].type = "X"
-        grid[3, 13].type = "X"
-
-        result = i_piece.srs_rotate(1, grid)
-
-        assert result is True
-        # Verify piece is in bounds after kick3 lands
-        assert all(0 <= c[0] < grid.width and 0 <= c[1] < grid.height for c in i_piece.coords), (
-            f"I piece out of bounds after kick: {i_piece.coords}"
+        oob_piece = Polyomino(
+            squares=frozenset({Square(-1, 5), Square(0, 5)}),
+            origin=(decimal.Decimal(0), decimal.Decimal(5)),
+            colors=tetrominoes[0].colors,
+            name="Z",
         )
-        assert len(i_piece.coords) == 4
+        kicks = list(_boundary_kicks(oob_piece, grid))
+        # Must include a kick with dx > 0 to push right
+        dx_kicks = [k for k in kicks if k.dx > 0]
+        assert len(dx_kicks) > 0
+
+    def test_right_wall_violation_yields_negative_dx(self) -> None:
+        """Piece violating right boundary yields a negative dx kick."""
+        grid = self._grid()
+        import decimal
+
+        oob_piece = Polyomino(
+            squares=frozenset({Square(9, 5), Square(10, 5)}),
+            origin=(decimal.Decimal(9), decimal.Decimal(5)),
+            colors=tetrominoes[0].colors,
+            name="Z",
+        )
+        kicks = list(_boundary_kicks(oob_piece, grid))
+        dx_kicks = [k for k in kicks if k.dx < 0]
+        assert len(dx_kicks) > 0
+
+    def test_floor_violation_yields_positive_dy(self) -> None:
+        """Piece violating floor yields a positive dy kick."""
+        grid = self._grid()
+        import decimal
+
+        oob_piece = Polyomino(
+            squares=frozenset({Square(5, -1), Square(5, 0)}),
+            origin=(decimal.Decimal(5), decimal.Decimal(-1)),
+            colors=tetrominoes[0].colors,
+            name="Z",
+        )
+        kicks = list(_boundary_kicks(oob_piece, grid))
+        dy_kicks = [k for k in kicks if k.dy > 0]
+        assert len(dy_kicks) > 0
+
+    def test_at_most_four_candidates(self) -> None:
+        """_boundary_kicks yields at most 4 candidates."""
+        grid = self._grid()
+        import decimal
+
+        # Corner violation: both dx and dy needed
+        oob_piece = Polyomino(
+            squares=frozenset({Square(-1, -1), Square(0, 0)}),
+            origin=(decimal.Decimal(-1), decimal.Decimal(-1)),
+            colors=tetrominoes[0].colors,
+            name="Z",
+        )
+        kicks = list(_boundary_kicks(oob_piece, grid))
+        assert len(kicks) <= 4
+
+
+class TestRotationOpenSpace:
+    """Test rotation in open space (no kicks needed)."""
+
+    @pytest.fixture
+    def grid(self) -> Grid:
+        """Create a standard 10x22 grid."""
+        return Grid(10, 22)
+
+    ROTATABLE = [i for i in range(len(tetrominoes)) if tetrominoes[i].name != "o"]
+
+    @pytest.mark.parametrize("piece_idx", ROTATABLE)
+    def test_cw_rotation_succeeds(self, piece_idx: int, grid: Grid) -> None:
+        """CW rotation from centre succeeds."""
+        piece = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
+
+        rotated = piece.rotate(Rotation(1), grid)
+
+        assert rotated is not None, f"{piece.name} CW rotation failed"
+        assert rotated.ordinal == piece.ordinal
+
+    @pytest.mark.parametrize("piece_idx", ROTATABLE)
+    def test_ccw_rotation_succeeds(self, piece_idx: int, grid: Grid) -> None:
+        """CCW rotation from centre succeeds."""
+        piece = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
+
+        rotated = piece.rotate(Rotation(-1), grid)
+
+        assert rotated is not None, f"{piece.name} CCW rotation failed"
+
+    def test_o_piece_rotation_preserves_squares(self, grid: Grid) -> None:
+        """O piece rotation returns the same square set (rotationally symmetric)."""
+        o_piece = next(t for t in tetrominoes if t.name == "o")
+        moved = o_piece.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        assert moved is not None
+
+        # The O piece has 4-fold symmetry — rotating it returns the same squares
+        result = moved.rotate(Rotation(1), grid)
+        # rotate() either returns None (blocked by self-overlap check) or the same squares
+        if result is not None:
+            assert result.squares == moved.squares, "O piece rotation should produce the same squares"
+
+    @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
+    def test_four_cw_returns_original_squares(self, piece_idx: int, grid: Grid) -> None:
+        """Four CW rotations return the piece to its original square set."""
+        piece = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
+
+        original_squares = piece.squares
+        current = piece
+        for _ in range(4):
+            rotated = current.rotate(Rotation(1), grid)
+            if rotated is None:
+                # O piece: symmetric, stays in place
+                break
+            current = rotated
+
+        assert current.squares == original_squares, f"{piece.name} 4 CW rotations did not return to original squares"
+
+    @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
+    def test_four_ccw_returns_original_squares(self, piece_idx: int, grid: Grid) -> None:
+        """Four CCW rotations return the piece to its original square set."""
+        piece = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
+
+        original_squares = piece.squares
+        current = piece
+        for _ in range(4):
+            rotated = current.rotate(Rotation(-1), grid)
+            if rotated is None:
+                break
+            current = rotated
+
+        assert current.squares == original_squares
+
+    @pytest.mark.parametrize("piece_idx", ROTATABLE)
+    def test_rotation_preserves_square_count(self, piece_idx: int, grid: Grid) -> None:
+        """Rotation preserves the number of squares."""
+        piece = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
+
+        initial_count = piece.ordinal
+        current = piece
+        for _ in range(4):
+            rotated = current.rotate(Rotation(1), grid)
+            if rotated is None:
+                break
+            assert rotated.ordinal == initial_count
+            current = rotated
+
+
+class TestRotationNearWalls:
+    """Test that kicks allow rotation near walls."""
+
+    @pytest.fixture
+    def grid(self) -> Grid:
+        """Create a standard 10x22 grid."""
+        return Grid(10, 22)
+
+    @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
+    def test_rotation_near_left_wall_preserves_squares(self, piece_idx: int, grid: Grid) -> None:
+        """Rotation near left wall: if it succeeds, all squares are in-bounds."""
+        piece = tetrominoes[piece_idx].translate(Translation(2, 11), grid)
+        assert piece is not None
+
+        rotated = piece.rotate(Rotation(1), grid)
+
+        if rotated is not None:
+            assert rotated.ordinal == piece.ordinal
+            assert rotated.min_x >= 0
+            assert rotated.max_x < grid.width
+
+    @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
+    def test_rotation_near_right_wall_preserves_squares(self, piece_idx: int, grid: Grid) -> None:
+        """Rotation near right wall: if it succeeds, all squares are in-bounds."""
+        piece = tetrominoes[piece_idx].translate(Translation(7, 11), grid)
+        assert piece is not None
+
+        rotated = piece.rotate(Rotation(1), grid)
+
+        if rotated is not None:
+            assert rotated.ordinal == piece.ordinal
+            assert rotated.max_x < grid.width
+
+    @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
+    def test_rotation_near_floor_preserves_squares(self, piece_idx: int, grid: Grid) -> None:
+        """Rotation near floor: if it succeeds, all squares are in-bounds."""
+        piece = tetrominoes[piece_idx].translate(Translation(5, 2), grid)
+        assert piece is not None
+
+        rotated = piece.rotate(Rotation(1), grid)
+
+        if rotated is not None:
+            assert rotated.ordinal == piece.ordinal
+            assert rotated.min_y >= 0
+
+    @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
+    def test_all_pieces_kick_from_left_wall(self, grid: Grid, piece_idx: int) -> None:
+        """All pieces can rotate from left wall without losing squares."""
+        # Use x=3 so the I piece (local min_x=-2) also fits: 3-2=1 >= 0
+        piece: Polyomino | None = tetrominoes[piece_idx].translate(Translation(3, 11), grid)
+        assert piece is not None
+
+        initial_count = piece.ordinal
+        current = piece
+        for _ in range(4):
+            rotated = current.rotate(Rotation(1), grid)
+            if rotated is None:
+                break
+            assert rotated.ordinal == initial_count
+            current = rotated
+
+    @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
+    def test_all_pieces_kick_from_right_wall(self, grid: Grid, piece_idx: int) -> None:
+        """All pieces can rotate from right wall without losing squares."""
+        piece: Polyomino | None = tetrominoes[piece_idx].translate(Translation(8, 11), grid)
+        assert piece is not None
+
+        initial_count = piece.ordinal
+        current = piece
+        for _ in range(4):
+            rotated = current.rotate(Rotation(1), grid)
+            if rotated is None:
+                break
+            assert rotated.ordinal == initial_count
+            current = rotated

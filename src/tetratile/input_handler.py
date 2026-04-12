@@ -6,7 +6,8 @@ subclasses are **coequal frontends**: swapping one for the other changes *who*
 controls the game but not *how* the game responds.
 
 All movement actions call :meth:`.TetraTile.move_piece` with an
-:class:`.EigenTransformation`, so the state guard (``GameState.running``)
+:class:`.EigenTransformation` value (:class:`.Translation` or
+:class:`.Rotation`), so the state guard (``GameState.running``)
 lives in one place.  Lock and pause actions call :meth:`.TetraTile.lock_piece`
 and :meth:`.TetraTile.pause` respectively.
 
@@ -47,45 +48,45 @@ class InputHandler:
 
         :returns: ``True`` if the piece moved.
         """
-        from . import EigenTransformation, Transformation
+        from . import Translation
 
-        return bool(self._game.move_piece(Transformation(EigenTransformation.horizontal, -1)))
+        return bool(self._game.move_piece(Translation(-1, 0)))
 
     def move_right(self) -> bool:
         """Translate the active piece one step right (:math:`+e_x`).
 
         :returns: ``True`` if the piece moved.
         """
-        from . import EigenTransformation, Transformation
+        from . import Translation
 
-        return bool(self._game.move_piece(Transformation(EigenTransformation.horizontal, 1)))
+        return bool(self._game.move_piece(Translation(1, 0)))
 
     def rotate_cw(self) -> bool:
         """Rotate the active piece one CW quarter-turn (:math:`r`).
 
         :returns: ``True`` if the rotation succeeded.
         """
-        from . import EigenTransformation, Transformation
+        from . import Rotation
 
-        return bool(self._game.move_piece(Transformation(EigenTransformation.rotation, 1)))
+        return bool(self._game.move_piece(Rotation(1)))
 
     def rotate_ccw(self) -> bool:
         """Rotate the active piece one CCW quarter-turn (:math:`r^{-1}`).
 
         :returns: ``True`` if the rotation succeeded.
         """
-        from . import EigenTransformation, Transformation
+        from . import Rotation
 
-        return bool(self._game.move_piece(Transformation(EigenTransformation.rotation, -1)))
+        return bool(self._game.move_piece(Rotation(-1)))
 
     def soft_drop(self) -> bool:
         """Translate the active piece one step down (gravity direction, :math:`-e_y`).
 
         :returns: ``True`` if the piece moved.
         """
-        from . import EigenTransformation, Transformation
+        from . import Translation
 
-        return bool(self._game.move_piece(Transformation(EigenTransformation.vertical, 1)))
+        return bool(self._game.move_piece(Translation(0, -1)))
 
     def full_drop(self) -> None:
         """Drop the active piece to its lowest reachable position.
@@ -103,9 +104,9 @@ class InputHandler:
         applies :math:`-e_y` iteratively until :meth:`.TetraTile.move_piece`
         returns ``False``.
         """
-        from . import EigenTransformation, Transformation
+        from . import Translation
 
-        while self._game.move_piece(Transformation(EigenTransformation.vertical, 1)):
+        while self._game.move_piece(Translation(0, -1)):
             pass
 
     def move_left_max(self) -> None:
@@ -121,9 +122,9 @@ class InputHandler:
         The loop applies :math:`-e_x` iteratively until blocked by the left
         wall or the stack.  No closed form exists in general.
         """
-        from . import EigenTransformation, Transformation
+        from . import Translation
 
-        while self._game.move_piece(Transformation(EigenTransformation.horizontal, -1)):
+        while self._game.move_piece(Translation(-1, 0)):
             pass
 
     def move_right_max(self) -> None:
@@ -139,9 +140,9 @@ class InputHandler:
         The loop applies :math:`+e_x` iteratively until blocked by the right
         wall or the stack.
         """
-        from . import EigenTransformation, Transformation
+        from . import Translation
 
-        while self._game.move_piece(Transformation(EigenTransformation.horizontal, 1)):
+        while self._game.move_piece(Translation(1, 0)):
             pass
 
     def toggle_pause(self) -> None:

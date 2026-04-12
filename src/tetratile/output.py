@@ -97,7 +97,7 @@ class PrintObserver(OutputHandler):
 
         print("=" * 40)
         print(f"STATE: {obs.state}")
-        print(f"Piece: {obs.current_piece or 'None'} (state={obs.current_piece_state})")
+        print(f"Piece: {obs.current_piece or 'None'}")
         print(f"Next:  {obs.next_piece or 'None'}")
         print(f"Rows cleared: {obs.stats.get('rows_cleared', 0)}")
         print(f"Pieces: {obs.stats.get('pieces', 0)}")

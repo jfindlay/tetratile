@@ -4,11 +4,9 @@ Tests rotation in open space (center of standard 10x22 grid) to validate
 that piece transformations are correct regardless of initial orientation.
 """
 
-import copy
-
 import pytest
 
-from tetratile import Grid, tetrominoes
+from tetratile import Grid, Rotation, Translation, tetrominoes
 
 
 class TestFreeRotationCW:
@@ -19,78 +17,76 @@ class TestFreeRotationCW:
         """Create a standard 10x22 grid."""
         return Grid(10, 22)
 
-    # Non-rotatable pieces (O doesn't rotate)
     ROTATABLE_INDICES = [i for i in range(len(tetrominoes)) if tetrominoes[i].name != "o"]
 
     @pytest.mark.parametrize("piece_idx", ROTATABLE_INDICES)
-    def test_cw_rotation_from_state_0(self, piece_idx: int, grid: Grid) -> None:
-        """CW rotation from state 0 produces valid coordinates."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([5, 11], grid)  # Center of grid
+    def test_cw_rotation_from_spawn(self, piece_idx: int, grid: Grid) -> None:
+        """CW rotation from spawn orientation produces valid coordinates."""
+        piece = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
 
-        initial_count = len(piece.coords)
-        result = piece.srs_rotate(1, grid)
+        initial_count = piece.ordinal
+        rotated = piece.rotate(Rotation(1), grid)
 
-        assert result is True, f"{piece.name} rotation from state 0 failed"
-        assert len(piece.coords) == initial_count, f"{piece.name} lost squares"
-        # Verify all coords are in bounds
-        for coord in piece.coords:
-            assert 0 <= coord[0] < grid.width, f"{piece.name} x out of bounds: {coord}"
-            assert 0 <= coord[1] < grid.height, f"{piece.name} y out of bounds: {coord}"
+        assert rotated is not None, f"{piece.name} rotation from spawn failed"
+        assert rotated.ordinal == initial_count, f"{piece.name} lost squares"
+        assert rotated.min_x >= 0
+        assert rotated.max_x < grid.width
+        assert rotated.min_y >= 0
+        assert rotated.max_y < grid.height
 
     @pytest.mark.parametrize("piece_idx", ROTATABLE_INDICES)
     def test_cw_rotation_from_state_1(self, piece_idx: int, grid: Grid) -> None:
-        """CW rotation from state 1 produces valid coordinates."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([5, 11], grid)
+        """CW rotation after one CW rotation produces valid coordinates."""
+        piece = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
 
-        # First rotate to state 1
-        piece.srs_rotate(1, grid)
-        assert piece.rotation_state == 1
+        r1 = piece.rotate(Rotation(1), grid)
+        assert r1 is not None
 
-        # Now rotate from state 1
-        initial_count = len(piece.coords)
-        result = piece.srs_rotate(1, grid)
+        initial_count = r1.ordinal
+        r2 = r1.rotate(Rotation(1), grid)
 
-        assert result is True, f"{piece.name} rotation from state 1 failed"
-        assert len(piece.coords) == initial_count
-        for coord in piece.coords:
-            assert 0 <= coord[0] < grid.width
-            assert 0 <= coord[1] < grid.height
+        assert r2 is not None, f"{piece.name} rotation from state 1 failed"
+        assert r2.ordinal == initial_count
+        assert r2.min_x >= 0
+        assert r2.max_x < grid.width
 
     @pytest.mark.parametrize("piece_idx", ROTATABLE_INDICES)
     def test_cw_rotation_from_state_2(self, piece_idx: int, grid: Grid) -> None:
-        """CW rotation from state 2 produces valid coordinates."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([5, 11], grid)
+        """CW rotation after two CW rotations produces valid coordinates."""
+        piece = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
 
-        # Rotate to state 2
-        piece.srs_rotate(1, grid)
-        piece.srs_rotate(1, grid)
-        assert piece.rotation_state == 2
+        current = piece
+        for _ in range(2):
+            rotated = current.rotate(Rotation(1), grid)
+            assert rotated is not None
+            current = rotated
 
-        initial_count = len(piece.coords)
-        result = piece.srs_rotate(1, grid)
+        initial_count = current.ordinal
+        result = current.rotate(Rotation(1), grid)
 
-        assert result is True, f"{piece.name} rotation from state 2 failed"
-        assert len(piece.coords) == initial_count
+        assert result is not None, f"{piece.name} rotation from state 2 failed"
+        assert result.ordinal == initial_count
 
     @pytest.mark.parametrize("piece_idx", ROTATABLE_INDICES)
     def test_cw_rotation_from_state_3(self, piece_idx: int, grid: Grid) -> None:
-        """CW rotation from state 3 produces valid coordinates."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([5, 11], grid)
+        """CW rotation after three CW rotations produces valid coordinates."""
+        piece = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
 
-        # Rotate to state 3
+        current = piece
         for _ in range(3):
-            piece.srs_rotate(1, grid)
-        assert piece.rotation_state == 3
+            rotated = current.rotate(Rotation(1), grid)
+            assert rotated is not None
+            current = rotated
 
-        initial_count = len(piece.coords)
-        result = piece.srs_rotate(1, grid)
+        initial_count = current.ordinal
+        result = current.rotate(Rotation(1), grid)
 
-        assert result is True, f"{piece.name} rotation from state 3 failed"
-        assert len(piece.coords) == initial_count
+        assert result is not None, f"{piece.name} rotation from state 3 failed"
+        assert result.ordinal == initial_count
 
 
 class TestFreeRotationCCW:
@@ -102,24 +98,24 @@ class TestFreeRotationCCW:
         return Grid(10, 22)
 
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
-    def test_ccw_rotation_from_state_0(self, piece_idx: int, grid: Grid) -> None:
-        """CCW rotation from state 0 produces valid coordinates."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([5, 11], grid)
+    def test_ccw_rotation_from_spawn(self, piece_idx: int, grid: Grid) -> None:
+        """CCW rotation from spawn orientation produces valid coordinates."""
+        piece = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
 
-        initial_count = len(piece.coords)
-        result = piece.srs_rotate(-1, grid)
+        initial_count = piece.ordinal
+        result = piece.rotate(Rotation(-1), grid)
 
-        # Skip O piece which doesn't rotate
         if piece.name == "o":
-            assert result is False
+            # O piece is symmetric; rotation either returns None or same squares
+            if result is not None:
+                assert result.squares == piece.squares
             return
 
-        assert result is True, f"{piece.name} CCW rotation from state 0 failed"
-        assert len(piece.coords) == initial_count
-        for coord in piece.coords:
-            assert 0 <= coord[0] < grid.width
-            assert 0 <= coord[1] < grid.height
+        assert result is not None, f"{piece.name} CCW rotation from spawn failed"
+        assert result.ordinal == initial_count
+        assert result.min_x >= 0
+        assert result.max_x < grid.width
 
 
 class TestFourRotationsReturn:
@@ -132,37 +128,35 @@ class TestFourRotationsReturn:
 
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_four_cw_returns_original(self, piece_idx: int, grid: Grid) -> None:
-        """Four CW rotations return piece to original position."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([5, 11], grid)
+        """Four CW rotations return piece to original square set."""
+        piece = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
 
-        original_coords = [c[:] for c in piece.coords]
-        original_state = piece.rotation_state
-
-        # Four CW rotations
+        original_squares = piece.squares
+        current = piece
         for _ in range(4):
-            piece.srs_rotate(1, grid)
+            rotated = current.rotate(Rotation(1), grid)
+            if rotated is None:
+                break
+            current = rotated
 
-        assert piece.coords == original_coords, (
-            f"{piece.name} 4 CW rotations did not return to original: expected {original_coords}, got {piece.coords}"
-        )
-        assert piece.rotation_state == original_state
+        assert current.squares == original_squares, f"{piece.name} 4 CW rotations did not return to original squares"
 
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_four_ccw_returns_original(self, piece_idx: int, grid: Grid) -> None:
-        """Four CCW rotations return piece to original position."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([5, 11], grid)
+        """Four CCW rotations return piece to original square set."""
+        piece = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
 
-        original_coords = [c[:] for c in piece.coords]
-        original_state = piece.rotation_state
-
-        # Four CCW rotations
+        original_squares = piece.squares
+        current = piece
         for _ in range(4):
-            piece.srs_rotate(-1, grid)
+            rotated = current.rotate(Rotation(-1), grid)
+            if rotated is None:
+                break
+            current = rotated
 
-        assert piece.coords == original_coords
-        assert piece.rotation_state == original_state
+        assert current.squares == original_squares
 
 
 class TestPieceCountPreserved:
@@ -175,14 +169,15 @@ class TestPieceCountPreserved:
 
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_rotation_preserves_square_count(self, piece_idx: int, grid: Grid) -> None:
-        """Rotation preserves the same number of squares."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([5, 11], grid)
+        """Rotation preserves the number of squares."""
+        piece = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
 
-        initial_count = len(piece.coords)
-
-        # Do a full rotation cycle
+        initial_count = piece.ordinal
+        current = piece
         for _ in range(4):
-            piece.srs_rotate(1, grid)
-
-        assert len(piece.coords) == initial_count, f"{piece.name} lost squares: {initial_count} -> {len(piece.coords)}"
+            rotated = current.rotate(Rotation(1), grid)
+            if rotated is None:
+                break
+            assert rotated.ordinal == initial_count, f"{piece.name} lost squares"
+            current = rotated

@@ -459,7 +459,7 @@ type alias.
 Relationship to Cellular Automata
 -----------------------------------
 
-The polyomino game is not merely *analogous* to a cellular automaton — in
+The polyomino game is not merely *analogous* to a cellular automaton (CA) — in
 several places the correspondence is exact and formal.  This section
 develops the connections systematically, from the definitional link through
 polyomino connectivity, to the formal driven-CA model, to empirical results
@@ -833,12 +833,12 @@ polyhypercube games.
    corner corrections).
 
 **On Clifford Algebra**
-   The Clifford algebra :math:`Cl(\mathbb{R}^N)` provides an elegant
-   formulation of :math:`N`-dimensional rotations via *rotors*
-   :math:`R = e^{-\theta B/2}`, where :math:`B` is a unit bivector in
-   :math:`\bigwedge^2 \mathbb{R}^N`.  The rotor formulation has two
-   attractive properties: it avoids gimbal lock and generalises
-   uniformly to any :math:`N`.
+   The Clifford algebra :math:`Cl(\mathbb{R}^N)`, also called geometric
+   algebra (GA), provides an elegant formulation of :math:`N`-dimensional
+   rotations via *rotors* :math:`R = e^{-\theta B/2}`, where :math:`B` is
+   a unit bivector in :math:`\bigwedge^2 \mathbb{R}^N`.  The rotor
+   formulation has two attractive properties: it avoids gimbal lock and
+   generalises uniformly to any :math:`N`.
 
    However, this game operates on :math:`\mathbb{Z}^N` (a discrete
    lattice), not :math:`\mathbb{R}^N` (the continuous plane).  The

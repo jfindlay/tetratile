@@ -43,12 +43,6 @@ The operations ``move_left_max``, ``move_right_max``, and ``full_drop``
 are **derived** (orbit suprema), not generators.  They belong in
 ``InputHandler``, not in ``EigenTransformation``.
 
-### The ``multiple`` Field
-
-The scale factor on a generator is always an **integer**.  The term
-*multiple* (not *magnitude*) is used precisely to signal this: real-valued
-scaling is not valid on the integer lattice :math:`\mathbb{Z}^N`.
-
 ### Polyominoes
 
 A polyomino of **ordinal** :math:`n` is a connected finite subset of
@@ -101,8 +95,9 @@ surface with no game logic.
 
 ``HumanInputHandler`` and ``AgentInputHandler`` are structurally identical
 subclasses of ``InputHandler``.  All movement methods call
-``TetraTile.move_piece()`` with an ``EigenTransformation``; the state
-guard (``GameState.running``) lives there.  Neither frontend has
+``TetraTile.move_piece()`` with an ``EigenTransformation`` value
+(a ``Translation`` or ``Rotation``); the state guard
+(``GameState.running``) lives there.  Neither frontend has
 privileged access to the game.
 
 ### N-Dimensional Generalization
@@ -116,13 +111,14 @@ formula is already in the N-dimensional form, hardcoded to plane
 proper rotation subgroup of the hyperoctahedral group :math:`B_N` is the
 target rotation group.
 
-### On Clifford Algebra
+### On Clifford Algebra (CA) and Geometric Algebra (GA)
 
-Considered and **set aside**.  The discrete lattice constraint
-(:math:`\mathbb{Z}^N`, not :math:`\mathbb{R}^N`) and the non-native
-encoding of translations in :math:`Cl(N)` make Geometric Algebra less
-natural than the direct :math:`\mathbb{Z}^N \rtimes B_N^+` formulation.
-GA would be relevant for a continuous-physics extension of the game.
+Clifford algebra (CA, also called geometric algebra or GA) is considered
+and **set aside**.  The discrete lattice constraint (:math:`\mathbb{Z}^N`,
+not :math:`\mathbb{R}^N`) and the non-native encoding of translations in
+:math:`Cl(N)` make GA less natural than the direct
+:math:`\mathbb{Z}^N \rtimes B_N^+` formulation.  GA would be relevant for
+a continuous-physics extension of the game.
 
 ## Docstring Standards
 
@@ -251,7 +247,7 @@ tetratile/
 │       ├── test_rotation_edge.py
 │       ├── test_rotation_free.py
 │       ├── test_row_removal.py
-│       ├── test_srs_rotation.py
+│       ├── test_srs_rotation.py  # boundary kick and rotation tests
 │       └── test_translation.py
 ├── pyproject.toml        # Project configuration
 ├── tox.ini              # Tox configuration

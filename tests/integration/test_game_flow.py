@@ -1,12 +1,13 @@
 """Integration tests for game flow and piece movement."""
 
-import copy
 import random
 
 from tetratile import (
-    EigenTransformation,
     Grid,
-    Transformation,
+    Polyomino,
+    Rotation,
+    Square,
+    Translation,
     tetrominoes,
 )
 
@@ -17,145 +18,172 @@ class TestPieceMovement:
     def test_tetromino_has_four_squares(self) -> None:
         """Test that each tetromino type has exactly 4 squares."""
         for t in tetrominoes:
-            assert len(t.coords) == 4
+            assert t.ordinal == 4
 
     def test_movement_preserves_all_squares(self, grid: Grid) -> None:
         """Test that movement doesn't lose squares."""
-        tetromino = copy.deepcopy(random.choice(tetrominoes))
-        tetromino.translate([grid.width // 2, grid.height // 2], grid)
+        piece = random.choice(tetrominoes)
+        moved = piece.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        assert moved is not None
 
-        initial_count = len(tetromino.coords)
-        initial_coords = [c[:] for c in tetromino.coords]
+        initial_count = moved.ordinal
+        initial_squares = moved.squares
 
-        tetromino.translate([2, 0], grid)
-        assert len(tetromino.coords) == initial_count
+        moved2 = moved.translate(Translation(2, 0), grid)
+        assert moved2 is not None
+        assert moved2.ordinal == initial_count
 
-        for i, expected in enumerate(initial_coords):
-            assert tetromino.coords[i] == [expected[0] + 2, expected[1]]
+        expected = frozenset(Square(s.x + 2, s.y) for s in initial_squares)
+        assert moved2.squares == expected
 
     def test_horizontal_movement_left(self, grid: Grid) -> None:
         """Test moving piece left."""
-        tetromino = copy.deepcopy(random.choice(tetrominoes))
-        tetromino.translate([grid.width // 2, grid.height // 2], grid)
+        piece = random.choice(tetrominoes)
+        moved = piece.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        assert moved is not None
 
-        initial_coords = [c[:] for c in tetromino.coords]
+        initial_squares = moved.squares
+        moved2 = moved.translate(Translation(-1, 0), grid)
+        assert moved2 is not None
 
-        tetromino.translate([-1, 0], grid)
-
-        for i, expected in enumerate(initial_coords):
-            assert tetromino.coords[i] == [expected[0] - 1, expected[1]]
+        expected = frozenset(Square(s.x - 1, s.y) for s in initial_squares)
+        assert moved2.squares == expected
 
     def test_horizontal_movement_right(self, grid: Grid) -> None:
         """Test moving piece right."""
-        tetromino = copy.deepcopy(random.choice(tetrominoes))
-        tetromino.translate([grid.width // 2, grid.height // 2], grid)
+        piece = random.choice(tetrominoes)
+        moved = piece.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        assert moved is not None
 
-        initial_coords = [c[:] for c in tetromino.coords]
+        initial_squares = moved.squares
+        moved2 = moved.translate(Translation(1, 0), grid)
+        assert moved2 is not None
 
-        tetromino.translate([1, 0], grid)
-
-        for i, expected in enumerate(initial_coords):
-            assert tetromino.coords[i] == [expected[0] + 1, expected[1]]
+        expected = frozenset(Square(s.x + 1, s.y) for s in initial_squares)
+        assert moved2.squares == expected
 
     def test_vertical_movement_down(self, grid: Grid) -> None:
         """Test moving piece down."""
-        tetromino = copy.deepcopy(random.choice(tetrominoes))
-        tetromino.translate([grid.width // 2, grid.height // 2], grid)
+        piece = random.choice(tetrominoes)
+        moved = piece.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        assert moved is not None
 
-        initial_coords = [c[:] for c in tetromino.coords]
+        initial_squares = moved.squares
+        moved2 = moved.translate(Translation(0, -1), grid)
+        assert moved2 is not None
 
-        tetromino.translate([0, -1], grid)
-
-        for i, expected in enumerate(initial_coords):
-            assert tetromino.coords[i] == [expected[0], expected[1] - 1]
+        expected = frozenset(Square(s.x, s.y - 1) for s in initial_squares)
+        assert moved2.squares == expected
 
     def test_rotation_preserves_all_squares(self, grid: Grid) -> None:
         """Test that rotation doesn't lose squares."""
-        tetromino = copy.deepcopy(random.choice([t for t in tetrominoes if t.name != "o"]))
-        tetromino.translate([grid.width // 2, grid.height // 2], grid)
+        piece = random.choice([t for t in tetrominoes if t.name != "o"])
+        moved = piece.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        assert moved is not None
 
-        initial_count = len(tetromino.coords)
+        initial_count = moved.ordinal
 
+        current = moved
         for _ in range(4):
-            result = tetromino.srs_rotate(1, grid)
-            assert result is True
-            assert len(tetromino.coords) == initial_count
+            rotated = current.rotate(Rotation(1), grid)
+            assert rotated is not None
+            assert rotated.ordinal == initial_count
+            current = rotated
 
     def test_piece_at_left_edge_cannot_move_left(self, grid: Grid) -> None:
-        """Test that piece at left edge cannot move further left."""
-        tetromino = copy.deepcopy(random.choice(tetrominoes))
-        tetromino.translate([1, grid.height // 2], grid)
+        """Test that a piece already at its leftmost position cannot move further left."""
+        piece = random.choice(tetrominoes)
+        # Move piece to absolute left wall
+        current: Polyomino | None = piece.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        assert current is not None
+        while True:
+            moved = current.translate(Translation(-1, 0), grid)
+            if moved is None:
+                break
+            current = moved
 
-        result = tetromino.translate([-1, 0], grid)
-        assert result is False
+        # Now at leftmost: one more step left must fail
+        result = current.translate(Translation(-1, 0), grid)
+        assert result is None
 
     def test_piece_at_right_edge_cannot_move_right(self, grid: Grid) -> None:
         """Test that piece at right edge cannot move further right."""
-        tetromino = copy.deepcopy(tetrominoes[2])  # l piece: x=[-2, -1, 0, 1]
-        tetromino.translate([grid.width - 2, grid.height // 2], grid)
+        piece = tetrominoes[2]  # l piece: 4 wide
+        moved = piece.translate(Translation(grid.width - 2, grid.height // 2), grid)
+        assert moved is not None
 
-        result = tetromino.translate([1, 0], grid)
-        assert result is False
+        result = moved.translate(Translation(1, 0), grid)
+        assert result is None
 
     def test_piece_at_bottom_cannot_move_down(self, grid: Grid) -> None:
         """Test that piece at bottom cannot move further down."""
-        tetromino = copy.deepcopy(tetrominoes[0])  # Z piece: upper row y=1, lower row y=0
-        tetromino.translate([grid.width // 2, 0], grid)
+        piece = tetrominoes[0]  # Z piece
+        moved = piece.translate(Translation(grid.width // 2, 0), grid)
+        assert moved is not None
 
-        result = tetromino.translate([0, -1], grid)
-        assert result is False
+        result = moved.translate(Translation(0, -1), grid)
+        assert result is None
 
     def test_side_movement_to_left_wall(self, grid: Grid) -> None:
-        """Test moving piece to left wall."""
-        tetromino = copy.deepcopy(random.choice(tetrominoes))
-        tetromino.translate([grid.width // 2, grid.height // 2], grid)
+        """Test moving piece to left wall (orbit supremum)."""
+        piece = random.choice(tetrominoes)
+        current: Polyomino | None = piece.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        assert current is not None
 
-        t = Transformation(EigenTransformation.min)
-        result = tetromino.translate(t, grid)
+        while True:
+            moved = current.translate(Translation(-1, 0), grid)
+            if moved is None:
+                break
+            current = moved
 
-        assert result is True
-        min_x = min(c[0] for c in tetromino.coords)
-        assert min_x == 0
+        assert current.min_x == 0
 
     def test_side_movement_to_right_wall(self, grid: Grid) -> None:
-        """Test moving piece to right wall."""
-        tetromino = copy.deepcopy(random.choice(tetrominoes))
-        tetromino.translate([grid.width // 2, grid.height // 2], grid)
+        """Test moving piece to right wall (orbit supremum)."""
+        piece = random.choice(tetrominoes)
+        current: Polyomino | None = piece.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        assert current is not None
 
-        t = Transformation(EigenTransformation.max)
-        result = tetromino.translate(t, grid)
+        while True:
+            moved = current.translate(Translation(1, 0), grid)
+            if moved is None:
+                break
+            current = moved
 
-        assert result is True
-        max_x = max(c[0] for c in tetromino.coords)
-        assert max_x == grid.width - 1
+        assert current.max_x == grid.width - 1
 
     def test_bottom_movement(self, grid: Grid) -> None:
-        """Test moving piece to bottom."""
-        tetromino = copy.deepcopy(random.choice(tetrominoes))
-        tetromino.translate([grid.width // 2, grid.height // 2], grid)
+        """Test moving piece to bottom (orbit supremum)."""
+        piece = random.choice(tetrominoes)
+        current: Polyomino | None = piece.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        assert current is not None
 
-        t = Transformation(EigenTransformation.bottom)
-        result = tetromino.translate(t, grid)
+        while True:
+            moved = current.translate(Translation(0, -1), grid)
+            if moved is None:
+                break
+            current = moved
 
-        assert result is True
-        assert tetromino.min(tetromino.dim) == 0
+        assert current.min_y == 0
 
     def test_stacking_preserves_both_pieces(self, grid: Grid) -> None:
-        """Test that stacking pieces preserves both."""
-        piece1 = copy.deepcopy(tetrominoes[3])  # T piece
-        piece1.translate([grid.width // 2, grid.height // 2], grid)
+        """Test that stacking pieces preserves both in the grid."""
+        piece1 = tetrominoes[3]  # T piece
+        moved1 = piece1.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        assert moved1 is not None
 
-        piece2 = copy.deepcopy(tetrominoes[0])  # Z piece - won't overlap with T
-        piece2.translate([grid.width // 2, grid.height // 2 + 5], grid)
+        piece2 = tetrominoes[0]  # Z piece
+        moved2 = piece2.translate(Translation(grid.width // 2, grid.height // 2 + 5), grid)
+        assert moved2 is not None
 
-        for coord in piece1.coords:
-            grid[coord].type = piece1.name
+        for s in moved1.squares:
+            grid[s] = moved1.name
 
-        for coord in piece2.coords:
-            grid[coord].type = piece2.name
+        for s in moved2.squares:
+            grid[s] = moved2.name
 
-        piece1_count = sum(1 for v in grid if grid[v].type == piece1.name)
-        piece2_count = sum(1 for v in grid if grid[v].type == piece2.name)
+        piece1_count = sum(1 for s in grid if grid[s] == moved1.name)
+        piece2_count = sum(1 for s in grid if grid[s] == moved2.name)
 
         assert piece1_count == 4
         assert piece2_count == 4

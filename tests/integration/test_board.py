@@ -1,187 +1,119 @@
 """Integration tests for Board class."""
 
-import copy
 from unittest.mock import MagicMock
 
 import pytest
 
-from tetratile import Board, tetrominoes
+from tetratile import Board, Grid, Square, Translation, tetrominoes
 from tetratile.config import GameConfig
 
 
-class TestBoardUpdate:
-    """Tests for Board.update() functionality."""
+class TestBoardRender:
+    """Tests for Board.render() functionality."""
 
     @pytest.fixture
-    def board(self, config: GameConfig) -> tuple[Board, GameConfig]:
-        """Create a board with mocked canvas.
-
-        Returns the board's internal grid as the board object itself.
-        """
+    def board(self, config: GameConfig) -> Board:
+        """Create a Board with a mocked parent widget."""
         mock_parent = MagicMock()
-        board = Board(config, mock_parent, config.board.width, config.board.height)
-        return board, config
-
-    def test_update_places_all_tetromino_squares(self, board: tuple[Board, GameConfig]) -> None:
-        """Test that Board.update places all 4 squares of a tetromino."""
-        board_obj, config = board
-        grid = board_obj._game_grid
-
-        tetromino = copy.deepcopy(tetrominoes[3])  # T piece
-        tetromino.translate([grid.width // 2, grid.height // 2], grid)
-
-        board_obj.update(tetromino)
-
-        for coord in tetromino.coords:
-            square = grid[coord]
-            assert square.type == tetromino.name
-            assert square.id is not None
-            assert square.colors is not None
-
-    def test_update_clears_all_tetromino_squares(self, board: tuple[Board, GameConfig]) -> None:
-        """Test that Board.update with clear=True removes all squares."""
-        board_obj, config = board
-        grid = board_obj._game_grid
-
-        tetromino = copy.deepcopy(tetrominoes[3])  # T piece
-        tetromino.translate([grid.width // 2, grid.height // 2], grid)
-
-        board_obj.update(tetromino)
-        board_obj.update(tetromino, clear=True)
-
-        for coord in tetromino.coords:
-            square = grid[coord]
-            assert square.type is None
-            assert square.id is None
-            assert square.colors is None
-
-    def test_update_is_active_flag(self, board: tuple[Board, GameConfig]) -> None:
-        """Test that is_active flag is set correctly."""
-        board_obj, config = board
-        grid = board_obj._game_grid
-
-        tetromino = copy.deepcopy(tetrominoes[3])
-        tetromino.translate([grid.width // 2, grid.height // 2], grid)
-
-        board_obj.update(tetromino, is_active=True)
-        for coord in tetromino.coords:
-            assert grid[coord].is_active is True
-
-        board_obj.update(tetromino, clear=True)
-        board_obj.update(tetromino, is_active=False)
-        for coord in tetromino.coords:
-            assert grid[coord].is_active is False
-
-    def test_update_all_tetromino_types(self, board: tuple[Board, GameConfig]) -> None:
-        """Test that all tetromino types are placed correctly."""
-        board_obj, config = board
-        grid = board_obj._game_grid
-
-        for tetromino_type in tetrominoes:
-            tetromino = copy.deepcopy(tetromino_type)
-            tetromino.translate([grid.width // 2, grid.height // 2], grid)
-
-            board_obj.update(tetromino)
-
-            for coord in tetromino.coords:
-                assert grid[coord].type == tetromino.name
-                assert grid[coord].id is not None
-
-            board_obj.update(tetromino, clear=True)
-
-    def test_clear_removes_all_squares(self, board: tuple[Board, GameConfig]) -> None:
-        """Test that clear() removes all squares from board."""
-        board_obj, config = board
-        grid = board_obj._game_grid
-
-        for tetromino_type in tetrominoes:
-            tetromino = copy.deepcopy(tetromino_type)
-            tetromino.translate([grid.width // 2, grid.height // 2], grid)
-            board_obj.update(tetromino)
-            board_obj.update(tetromino, clear=True)
-
-        board_obj.clear()
-
-        for v in grid:
-            square = grid[v]
-            assert square.type is None
-            assert square.id is None
-
-
-class TestBoardFullRows:
-    """Tests for full row detection."""
+        return Board(config, mock_parent, config.board.width, config.board.height)
 
     @pytest.fixture
-    def board(self, config: GameConfig) -> tuple[Board, GameConfig]:
+    def grid(self, config: GameConfig) -> Grid:
+        """Create a fresh Grid matching the board dimensions."""
+        return Grid(config.board.width, config.board.height)
+
+    def test_render_active_piece_paints_squares(self, board: Board, grid: Grid) -> None:
+        """Rendering an active piece paints its squares onto the canvas."""
+        piece = tetrominoes[3]  # T piece
+        moved = piece.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        assert moved is not None
+
+        board.render(grid, moved)
+
+        for s in moved.squares:
+            assert s in board._canvas_ids
+
+    def test_render_clear_removes_active_squares(self, board: Board, grid: Grid) -> None:
+        """Rendering with no active piece removes previously painted squares."""
+        piece = tetrominoes[3]
+        moved = piece.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        assert moved is not None
+
+        board.render(grid, moved)
+        board.render(grid, None)  # clear active piece
+
+        for s in moved.squares:
+            assert s not in board._canvas_ids
+
+    def test_render_locked_piece_from_grid(self, board: Board, grid: Grid) -> None:
+        """Squares committed to the grid are rendered as locked pieces."""
+        for s in grid:
+            if s.x < 2 and s.y < 2:
+                grid[s] = "T"
+
+        board.render(grid, None)
+
+        for s in grid._occupancy:
+            assert s in board._canvas_ids
+
+    def test_render_all_tetromino_types(self, board: Board, grid: Grid) -> None:
+        """All tetromino types render without error."""
+        for piece_type in tetrominoes:
+            moved = piece_type.translate(Translation(grid.width // 2, grid.height // 2), grid)
+            assert moved is not None
+            board.render(grid, moved)
+            board.render(grid, None)
+
+    def test_clear_removes_all_canvas_items(self, board: Board, grid: Grid) -> None:
+        """board.clear() removes all drawn canvas items."""
+        for piece_type in tetrominoes:
+            moved = piece_type.translate(Translation(grid.width // 2, grid.height // 2), grid)
+            if moved is not None:
+                board.render(grid, moved)
+
+        board.clear()
+
+        assert len(board._canvas_ids) == 0
+
+
+class TestBoardHighlightFullRows:
+    """Tests for full row detection via Board.highlight_full_rows()."""
+
+    @pytest.fixture
+    def board(self, config: GameConfig) -> Board:
         """Create a board with mocked canvas."""
         mock_parent = MagicMock()
-        board = Board(config, mock_parent, config.board.width, config.board.height)
-        return board, config
+        return Board(config, mock_parent, config.board.width, config.board.height)
 
-    def test_select_full_row_detects_complete_row(self, board: tuple[Board, GameConfig]) -> None:
-        """Test that select_full_rows detects a complete row."""
-        board_obj, config = board
-        grid = board_obj._game_grid
+    @pytest.fixture
+    def grid(self, config: GameConfig) -> Grid:
+        """Create a fresh Grid."""
+        return Grid(config.board.width, config.board.height)
 
+    def test_detects_complete_row(self, board: Board, grid: Grid) -> None:
+        """highlight_full_rows returns [0] for a full bottom row."""
         for x in range(grid.width):
-            grid[x, 0].type = "T"
+            grid[Square(x, 0)] = "T"
 
-        result = board_obj.select_full_rows()
+        full_rows = board.highlight_full_rows(grid)
 
-        assert result is True
+        assert full_rows == [0]
 
-    def test_select_full_row_ignores_partial_row(self, board: tuple[Board, GameConfig]) -> None:
-        """Test that select_full_rows ignores incomplete rows."""
-        board_obj, config = board
-        grid = board_obj._game_grid
-
+    def test_ignores_partial_row(self, board: Board, grid: Grid) -> None:
+        """highlight_full_rows returns [] for a partial row."""
         for x in range(grid.width - 1):
-            grid[x, 0].type = "T"
+            grid[Square(x, 0)] = "T"
 
-        result = board_obj.select_full_rows()
+        full_rows = board.highlight_full_rows(grid)
 
-        assert result is False
+        assert full_rows == []
 
-    def test_select_full_rows_finds_multiple(self, board: tuple[Board, GameConfig]) -> None:
-        """Test detecting multiple full rows."""
-        board_obj, config = board
-        grid = board_obj._game_grid
-
+    def test_detects_multiple_full_rows(self, board: Board, grid: Grid) -> None:
+        """highlight_full_rows detects two full rows."""
         for x in range(grid.width):
-            grid[x, 0].type = "T"
-            grid[x, 1].type = "T"
+            grid[Square(x, 0)] = "T"
+            grid[Square(x, 1)] = "T"
 
-        result = board_obj.select_full_rows()
+        full_rows = board.highlight_full_rows(grid)
 
-        assert result is True
-
-    def test_remove_full_rows_clears_only_full(self, board: tuple[Board, GameConfig]) -> None:
-        """Test that remove_full_rows clears full rows and shifts overburden down."""
-        board_obj, config = board
-        grid = board_obj._game_grid
-
-        for x in range(grid.width):
-            grid[x, 0].type = "T"
-
-        grid[0, 1].type = "Z"
-
-        board_obj.remove_full_rows()
-
-        # Z at y=1 shifts down to y=0 after full row cleared
-        assert grid[0, 0].type == "Z"
-        # y=1 is now empty
-        assert grid[0, 1].type is None
-
-    def test_remove_full_rows_shifts_upper_rows_down(self, board: tuple[Board, GameConfig]) -> None:
-        """Test that rows above cleared rows shift down."""
-        board_obj, config = board
-        grid = board_obj._game_grid
-
-        for x in range(grid.width):
-            grid[x, 1].type = "T"
-
-        board_obj.remove_full_rows()
-
-        for x in range(grid.width):
-            assert grid[x, 1].type is None
-            assert grid[x, 0].type is None
+        assert sorted(full_rows) == [0, 1]

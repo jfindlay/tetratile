@@ -1,10 +1,10 @@
 """Integration tests for GameObservation, OutputHandler, and Agent."""
 
-from unittest.mock import MagicMock
+import datetime
 
 import pytest
 
-from tetratile import Board, GameObservation, GameState
+from tetratile import GameObservation, GameState, Grid, Square
 from tetratile.agent import Action, RandomAgent
 from tetratile.config import GameConfig
 from tetratile.output import AgentOutputHandler, PrintObserver
@@ -14,81 +14,63 @@ from tetratile.output import AgentOutputHandler, PrintObserver
 # ---------------------------------------------------------------------------
 
 
+def _build_board_state(grid: Grid) -> list[list[str | None]]:
+    """Build a row-major board state from a Grid.
+
+    :param grid: The grid to snapshot.
+    :returns: ``board_state[y][x]``, y=0 = bottom row.
+    """
+    width, height = grid.width, grid.height
+    board_state: list[list[str | None]] = [[None] * width for _ in range(height)]
+    for s, name in grid.occupied().items():
+        board_state[s.y][s.x] = name
+    return board_state
+
+
 class TestObservationBoardLayout:
     """Verify that GameObservation.board is row-major: board[y][x]."""
 
     @pytest.fixture
-    def board(self, config: GameConfig) -> Board:
-        """Create a Board with mocked parent."""
-        parent = MagicMock()
-        return Board(config, parent, config.board.width, config.board.height)
+    def grid(self, config: GameConfig) -> Grid:
+        """Create a fresh Grid."""
+        return Grid(config.board.width, config.board.height)
 
-    def test_board_outer_dimension_is_height(self, board: Board, config: GameConfig) -> None:
+    def test_board_outer_dimension_is_height(self, grid: Grid, config: GameConfig) -> None:
         """board[y] rows: outer list length equals board height."""
-        # Place a single piece and call get_observation via a mock game
-        grid = board._game_grid
-        grid[0, 0].type = "T"
+        grid[Square(0, 0)] = "T"
 
-        # Build observation manually (same logic as TetraTile.get_observation)
-        width, height = board.width, board.height
-        board_state = [[None] * width for _ in range(height)]
-        for y in range(height):
-            for x in range(width):
-                if grid[x, y].type:
-                    board_state[y][x] = grid[x, y].type
+        board_state = _build_board_state(grid)
 
-        assert len(board_state) == height
-        assert all(len(row) == width for row in board_state)
+        assert len(board_state) == grid.height
+        assert all(len(row) == grid.width for row in board_state)
 
-    def test_board_bottom_row_is_index_zero(self, board: Board, config: GameConfig) -> None:
+    def test_board_bottom_row_is_index_zero(self, grid: Grid, config: GameConfig) -> None:
         """board[0] is the bottom row (y=0 in Cartesian)."""
-        grid = board._game_grid
-        # Place a marker at x=3, y=0 (bottom-left area)
-        grid[3, 0].type = "Z"
+        grid[Square(3, 0)] = "Z"
 
-        width, height = board.width, board.height
-        board_state = [[None] * width for _ in range(height)]
-        for y in range(height):
-            for x in range(width):
-                if grid[x, y].type:
-                    board_state[y][x] = grid[x, y].type
+        board_state = _build_board_state(grid)
 
         assert board_state[0][3] == "Z", "Cell at y=0, x=3 should appear in board_state[0][3]"
-        # No other row should contain the marker
-        for y in range(1, height):
+        for y in range(1, grid.height):
             assert board_state[y][3] is None
 
-    def test_board_top_row_is_index_height_minus_one(self, board: Board, config: GameConfig) -> None:
+    def test_board_top_row_is_index_height_minus_one(self, grid: Grid, config: GameConfig) -> None:
         """board[height-1] is the top row (y=height-1 in Cartesian)."""
-        grid = board._game_grid
-        height = board.height
-        grid[5, height - 1].type = "S"
+        grid[Square(5, grid.height - 1)] = "S"
 
-        width = board.width
-        board_state = [[None] * width for _ in range(height)]
-        for y in range(height):
-            for x in range(width):
-                if grid[x, y].type:
-                    board_state[y][x] = grid[x, y].type
+        board_state = _build_board_state(grid)
 
-        assert board_state[height - 1][5] == "S"
-        for y in range(height - 1):
+        assert board_state[grid.height - 1][5] == "S"
+        for y in range(grid.height - 1):
             assert board_state[y][5] is None
 
-    def test_board_column_index_matches_x(self, board: Board, config: GameConfig) -> None:
+    def test_board_column_index_matches_x(self, grid: Grid, config: GameConfig) -> None:
         """board[y][x] column index matches the x Cartesian coordinate."""
-        grid = board._game_grid
-        # Place markers at different x values in the same row (y=2)
-        grid[0, 2].type = "T"
-        grid[4, 2].type = "L"
-        grid[9, 2].type = "J"
+        grid[Square(0, 2)] = "T"
+        grid[Square(4, 2)] = "L"
+        grid[Square(9, 2)] = "J"
 
-        width, height = board.width, board.height
-        board_state = [[None] * width for _ in range(height)]
-        for y in range(height):
-            for x in range(width):
-                if grid[x, y].type:
-                    board_state[y][x] = grid[x, y].type
+        board_state = _build_board_state(grid)
 
         assert board_state[2][0] == "T"
         assert board_state[2][4] == "L"
@@ -106,14 +88,13 @@ class TestAgentOutputHandler:
     def _make_obs(self) -> GameObservation:
         """Create a minimal fake observation."""
         return GameObservation(
-            board=[[None] * 10 for _ in range(22)],
+            board=tuple(tuple(None for _ in range(10)) for _ in range(22)),
             current_piece="T",
-            current_piece_coords=[[5, 20]],
-            current_piece_state=0,
+            current_piece_coords=frozenset({Square(5, 20)}),
             next_piece="S",
             stats={},
             state=GameState.running,
-            elapsed=__import__("datetime").timedelta(seconds=0),
+            elapsed=datetime.timedelta(seconds=0),
         )
 
     def test_get_latest_returns_none_before_first_observation(self) -> None:
@@ -148,15 +129,12 @@ class TestPrintObserver:
 
     def _make_obs(self) -> GameObservation:
         """Create a minimal fake observation."""
-        import datetime
-
-        board = [[None] * 10 for _ in range(22)]
-        board[0][3] = "T"  # bottom row, column 3
+        board_list = [[None] * 10 for _ in range(22)]
+        board_list[0][3] = "T"  # bottom row, column 3
         return GameObservation(
-            board=board,
+            board=tuple(tuple(row) for row in board_list),
             current_piece="T",
-            current_piece_coords=[[3, 0]],
-            current_piece_state=0,
+            current_piece_coords=frozenset({Square(3, 0)}),
             next_piece="S",
             stats={"rows_cleared": 0, "pieces": 1},
             state=GameState.running,
@@ -179,7 +157,6 @@ class TestPrintObserver:
         obs = self._make_obs()
         observer.on_observation(obs)
         captured = capsys.readouterr()
-        # The "T" piece marker should appear in the board rendering
         assert "TT" in captured.out  # 2-char cell representation
 
 
@@ -193,13 +170,10 @@ class TestRandomAgent:
 
     def _make_obs(self) -> GameObservation:
         """Minimal observation."""
-        import datetime
-
         return GameObservation(
-            board=[[None] * 10 for _ in range(22)],
+            board=tuple(tuple(None for _ in range(10)) for _ in range(22)),
             current_piece="T",
-            current_piece_coords=[],
-            current_piece_state=0,
+            current_piece_coords=frozenset(),
             next_piece="S",
             stats={},
             state=GameState.running,

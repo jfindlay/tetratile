@@ -1,14 +1,12 @@
 """Integration tests for translation behavior.
 
-Tests horizontal and vertical movement, including max translations
+Tests horizontal and vertical movement, including maximal translations
 (left edge, right edge, drop to bottom) to validate movement boundaries.
 """
 
-import copy
-
 import pytest
 
-from tetratile import EigenTransformation, Grid, Transformation, tetrominoes
+from tetratile import Grid, Polyomino, Square, Translation, tetrominoes
 
 
 class TestHorizontalMovement:
@@ -22,37 +20,41 @@ class TestHorizontalMovement:
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_move_left_from_center(self, piece_idx: int, grid: Grid) -> None:
         """Move left from center succeeds."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([5, 11], grid)
+        piece = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
 
-        result = piece.translate([-1, 0], grid)
+        result = piece.translate(Translation(-1, 0), grid)
 
-        assert result is True, f"{piece.name} move left from center failed"
+        assert result is not None, f"{piece.name} move left from center failed"
 
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_move_right_from_center(self, piece_idx: int, grid: Grid) -> None:
         """Move right from center succeeds."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([5, 11], grid)
+        piece = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
 
-        result = piece.translate([1, 0], grid)
+        result = piece.translate(Translation(1, 0), grid)
 
-        assert result is True, f"{piece.name} move right from center failed"
+        assert result is not None, f"{piece.name} move right from center failed"
 
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_left_movement_stops_at_wall(self, piece_idx: int, grid: Grid) -> None:
         """Left movement stops at left wall."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        # Start at x=1 so there's one valid move left
-        piece.translate([1, 11], grid)
+        # Use x=4 so the I piece (4 wide, local x in [-2,1]) also fits
+        piece = tetrominoes[piece_idx].translate(Translation(4, 11), grid)
+        assert piece is not None
 
-        # Move left - should either succeed or fail, but coordinates must stay valid
-        piece.translate([-1, 0], grid)
+        # Move left until blocked
+        current = piece
+        while True:
+            moved = current.translate(Translation(-1, 0), grid)
+            if moved is None:
+                break
+            current = moved
 
-        # Verify all coords are within valid grid range (can extend slightly for wide pieces)
-        for coord in piece.coords:
-            # Allow small negative values for wide pieces like I
-            assert coord[0] >= -3, f"{piece.name} went too far left (x={coord[0]})"
+        # All squares must be in-bounds at the leftmost reachable position
+        for s in current.squares:
+            assert s.x >= 0, f"{piece.name} went below left wall (x={s.x})"
 
 
 class TestVerticalMovement:
@@ -66,33 +68,35 @@ class TestVerticalMovement:
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_move_down_from_center(self, piece_idx: int, grid: Grid) -> None:
         """Move down from center succeeds."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([5, 11], grid)
+        piece = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
 
-        result = piece.translate([0, -1], grid)
+        result = piece.translate(Translation(0, -1), grid)
 
-        assert result is True, f"{piece.name} move down from center failed"
+        assert result is not None, f"{piece.name} move down from center failed"
 
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_down_movement_stops_at_floor(self, piece_idx: int, grid: Grid) -> None:
         """Down movement stops at floor."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([5, 2], grid)
+        piece = tetrominoes[piece_idx].translate(Translation(5, 2), grid)
+        assert piece is not None
 
-        # Move down until we can't anymore
+        current = piece
         moves = 0
-        while piece.translate([0, -1], grid):
+        while True:
+            moved = current.translate(Translation(0, -1), grid)
+            if moved is None:
+                break
+            current = moved
             moves += 1
-            # Prevent infinite loop
             if moves > 10:
                 break
 
-        # Should have moved at least once from y=2
         assert moves >= 1, f"{piece.name} couldn't move down from y=2"
 
 
 class TestMaxTranslation:
-    """Test maximal translations (min, max)."""
+    """Test maximal translations (left wall, right wall, floor)."""
 
     @pytest.fixture
     def grid(self) -> Grid:
@@ -102,25 +106,30 @@ class TestMaxTranslation:
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_max_left_translation(self, piece_idx: int, grid: Grid) -> None:
         """Max translation to left edge works."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([8, 11], grid)
+        piece: Polyomino | None = tetrominoes[piece_idx].translate(Translation(8, 11), grid)
+        assert piece is not None
 
-        piece.transform(Transformation(EigenTransformation.min), grid)
+        while True:
+            moved = piece.translate(Translation(-1, 0), grid)
+            if moved is None:
+                break
+            piece = moved
 
-        # Should reach or get close to left edge
-        min_x = min(c[0] for c in piece.coords)
-        assert min_x >= 0
+        assert piece.min_x >= 0
 
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_max_right_translation(self, piece_idx: int, grid: Grid) -> None:
         """Max translation to right edge works."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([1, 11], grid)
+        piece: Polyomino | None = tetrominoes[piece_idx].translate(Translation(4, 11), grid)
+        assert piece is not None
 
-        piece.transform(Transformation(EigenTransformation.max), grid)
+        while True:
+            moved = piece.translate(Translation(1, 0), grid)
+            if moved is None:
+                break
+            piece = moved
 
-        max_x = max(c[0] for c in piece.coords)
-        assert max_x < grid.width
+        assert piece.max_x < grid.width
 
 
 class TestTranslationPreservesSquares:
@@ -134,30 +143,37 @@ class TestTranslationPreservesSquares:
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_horizontal_translation_preserves_squares(self, piece_idx: int, grid: Grid) -> None:
         """Horizontal translation preserves square count."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([5, 11], grid)
+        piece: Polyomino | None = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
 
-        initial_count = len(piece.coords)
+        initial_count = piece.ordinal
 
-        # Move left and right
-        piece.translate([-3, 0], grid)
-        piece.translate([3, 0], grid)
+        # Move left then right
+        moved = piece.translate(Translation(-3, 0), grid)
+        if moved is not None:
+            piece = moved
+        moved = piece.translate(Translation(3, 0), grid)
+        if moved is not None:
+            piece = moved
 
-        assert len(piece.coords) == initial_count
+        assert piece.ordinal == initial_count
 
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_vertical_translation_preserves_squares(self, piece_idx: int, grid: Grid) -> None:
         """Vertical translation preserves square count."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([5, 11], grid)
+        piece: Polyomino | None = tetrominoes[piece_idx].translate(Translation(5, 11), grid)
+        assert piece is not None
 
-        initial_count = len(piece.coords)
+        initial_count = piece.ordinal
 
-        # Move down and up
-        piece.translate([0, -5], grid)
-        piece.translate([0, 5], grid)
+        moved = piece.translate(Translation(0, -5), grid)
+        if moved is not None:
+            piece = moved
+        moved = piece.translate(Translation(0, 5), grid)
+        if moved is not None:
+            piece = moved
 
-        assert len(piece.coords) == initial_count
+        assert piece.ordinal == initial_count
 
 
 class TestTranslationWithStack:
@@ -165,37 +181,35 @@ class TestTranslationWithStack:
 
     @pytest.fixture
     def grid_with_stack(self) -> Grid:
-        """Create grid with a stack."""
+        """Create grid with a stack at y=0."""
         grid = Grid(10, 22)
-        # Add a row at the bottom
         for x in range(10):
-            grid[x, 0].type = "T"
+            grid[Square(x, 0)] = "T"
         return grid
 
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_down_stops_at_stack(self, piece_idx: int, grid_with_stack: Grid) -> None:
-        """Down movement stops at stack."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([5, 3], grid_with_stack)
+        """Down movement stops above the stack."""
+        piece: Polyomino | None = tetrominoes[piece_idx].translate(Translation(5, 3), grid_with_stack)
+        assert piece is not None
 
-        # Move down until blocked
-        while piece.translate([0, -1], grid_with_stack):
-            pass
+        current = piece
+        while True:
+            moved = current.translate(Translation(0, -1), grid_with_stack)
+            if moved is None:
+                break
+            current = moved
 
-        # Should be above the stack
-        min_y = min(c[1] for c in piece.coords)
-        assert min_y > 0
+        assert current.min_y > 0
 
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_horizontal_movement_with_stack(self, piece_idx: int, grid_with_stack: Grid) -> None:
-        """Horizontal movement works around stack."""
-        piece = copy.deepcopy(tetrominoes[piece_idx])
-        piece.translate([5, 3], grid_with_stack)
+        """Horizontal movement works above the stack."""
+        piece = tetrominoes[piece_idx].translate(Translation(5, 3), grid_with_stack)
+        assert piece is not None
 
-        # Move left
-        result = piece.translate([-1, 0], grid_with_stack)
-        assert result is True
+        result_left = piece.translate(Translation(-1, 0), grid_with_stack)
+        assert result_left is not None
 
-        # Move right
-        result = piece.translate([1, 0], grid_with_stack)
-        assert result is True
+        result_right = piece.translate(Translation(1, 0), grid_with_stack)
+        assert result_right is not None
