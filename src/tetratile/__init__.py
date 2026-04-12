@@ -35,6 +35,26 @@ from .output import OutputHandler
 
 _VERSION: str = importlib.metadata.version("tetratile")
 
+__all__ = [
+    "Board",
+    "Colors",
+    "EigenTransformation",
+    "GameEvent",
+    "GameObservation",
+    "GameState",
+    "Grid",
+    "Polyomino",
+    "Rotation",
+    "Square",
+    "TetraTile",
+    "TetrominoData",
+    "TetrominoType",
+    "Translation",
+    "mix_with_black",
+    "tetrominoes",
+    "used_keys",
+]
+
 
 # ---------------------------------------------------------------------------
 # Primitive lattice types
@@ -165,6 +185,10 @@ class GameObservation:
         or ``None`` between pieces.
     :attr current_piece_coords: Frozen set of :class:`Square` coordinates for
         the current piece's cells.
+    :attr current_piece_rotation: :math:`C_4` rotation index in
+        :math:`\\{0, 1, 2, 3\\}` where 0 is the spawn orientation and each
+        increment represents one additional CW quarter-turn.  ``-1`` when no
+        piece is active.
     :attr next_piece: Name of the next piece to spawn, or ``None``.
     :attr stats: Dictionary of game statistics (pieces placed, rows cleared, etc.).
     :attr state: Current :class:`GameState`.
@@ -174,6 +198,7 @@ class GameObservation:
     board: tuple[tuple[str | None, ...], ...]
     current_piece: str | None
     current_piece_coords: frozenset[Square]
+    current_piece_rotation: int
     next_piece: str | None
     stats: dict[str, typing.Any]
     state: GameState
@@ -183,6 +208,56 @@ class GameObservation:
 # ---------------------------------------------------------------------------
 # Helper function
 # ---------------------------------------------------------------------------
+
+
+def _rotation_state(piece: "Polyomino") -> int:
+    """Derive the :math:`C_4` rotation index of a piece from its current squares.
+
+    Computes which of the four canonical rotation states (0–3, CW) the piece
+    is in by translating the current squares back to local frame (using the
+    piece's origin) and comparing against each rotation of the spawn-state
+    squares for that piece type.  Returns ``-1`` if the piece name is not
+    a recognised tetromino type.
+
+    :param piece: The :class:`Polyomino` to inspect.
+    :returns: Rotation index in :math:`\\{0, 1, 2, 3\\}`, or ``-1`` if unknown.
+    """
+    # Find the canonical (spawn) squares for this piece name
+    canonical: frozenset[Square] | None = None
+    canonical_origin: tuple[D, D] | None = None
+    for t in TetrominoType:
+        if t.value.name == piece.name:
+            canonical = t.value.squares
+            canonical_origin = t.value.origin
+            break
+    if canonical is None or canonical_origin is None:
+        return -1
+
+    # Translate current squares to local frame: subtract current origin
+    ox, oy = piece.origin
+
+    def _localise(squares: frozenset[Square], pivot: tuple[D, D]) -> frozenset[Square]:
+        px, py = pivot
+        return frozenset(Square(s.x - int(px), s.y - int(py)) for s in squares)
+
+    local_current = _localise(piece.squares, piece.origin)
+
+    # Generate the 4 rotations of canonical squares and compare
+    cx, cy = canonical_origin
+    rotated = canonical
+    for state in range(4):
+        local_canonical = _localise(rotated, canonical_origin)
+        if local_current == local_canonical:
+            return state
+        # Apply one CW quarter-turn: (dx, dy) -> (dy, -dx) about canonical_origin
+        rotated = frozenset(
+            Square(
+                int(1 * (s.y - cy) + cx),
+                int(-1 * (s.x - cx) + cy),
+            )
+            for s in rotated
+        )
+    return -1
 
 
 def mix_with_black(color: str, factor: float = 0.5) -> str:
@@ -443,8 +518,8 @@ class Polyomino:
         new_origin = (self.origin[0] + t.dx, self.origin[1] + t.dy)
         return Polyomino(squares=new_squares, origin=new_origin, colors=self.colors, name=self.name)
 
-    def rotate(self, r: Rotation, grid: Grid) -> "Polyomino | None":
-        """Rotate the polyomino about its origin, with functional boundary kicks.
+    def rotate(self, r: Rotation, grid: Grid, kick: bool = True) -> "Polyomino | None":
+        """Rotate the polyomino about its origin, with optional boundary kicks.
 
         Applies the CW quarter-turn formula in :math:`y`-up Cartesian
         coordinates:
@@ -469,16 +544,21 @@ class Polyomino:
         pieces (Z, S, I, O) because :class:`~decimal.Decimal` arithmetic
         preserves ``origin`` without rounding.
 
-        If the freely-rotated position is invalid, :func:`_boundary_kicks`
-        generates corrective :class:`Translation`s derived from bounding-box
-        violations against the grid domain (see :ref:`boundary-kicks` in
+        When ``kick=True`` (the default), :func:`_boundary_kicks` generates
+        corrective :class:`Translation`s derived from bounding-box violations
+        against the grid domain (see :ref:`boundary-kicks` in
         ``docs/mathematics.rst``).  The first valid kick is accepted.
+
+        When ``kick=False``, only the in-place rotation (zero kick) is
+        attempted; this is the semantics for games or tests where wall-kick
+        correction is disabled.
 
         Returns a **new** :class:`Polyomino` at the rotated (and possibly
         kicked) position, or ``None`` if no valid position exists.
 
         :param r: :class:`Rotation`; ``steps=+1`` CW, ``steps=-1`` CCW.
         :param grid: :class:`Grid` to validate each candidate placement against.
+        :param kick: If ``True``, apply boundary kicks; if ``False``, only try in-place.
         :returns: Rotated (and possibly kicked) :class:`Polyomino`, or ``None``.
         """
         ox, oy = self.origin
@@ -491,10 +571,11 @@ class Polyomino:
             for s in self.squares
         )
         rotated = Polyomino(squares=new_squares, origin=self.origin, colors=self.colors, name=self.name)
-        for kick in _boundary_kicks(rotated, grid):
-            candidate = frozenset(Square(s.x + kick.dx, s.y + kick.dy) for s in new_squares)
+        kicks = _boundary_kicks(rotated, grid) if kick else iter((Translation(0, 0),))
+        for k in kicks:
+            candidate = frozenset(Square(s.x + k.dx, s.y + k.dy) for s in new_squares)
             if grid.check(candidate):
-                new_origin = (self.origin[0] + kick.dx, self.origin[1] + kick.dy)
+                new_origin = (self.origin[0] + k.dx, self.origin[1] + k.dy)
                 return Polyomino(squares=candidate, origin=new_origin, colors=self.colors, name=self.name)
         return None
 
@@ -871,6 +952,7 @@ class Board(tk.Canvas):
 
         self._canvas_ids: dict[Square, int] = {}
         self._colors: dict[Square, Colors] = {}
+        self._active_squares: frozenset[Square] = frozenset()
 
         super().__init__(
             parent,
@@ -947,52 +1029,78 @@ class Board(tk.Canvas):
         self._canvas_ids[s] = self._draw_square(s, colors)
         self._colors[s] = colors
 
-    def render(self, grid: Grid, active: "Polyomino | None", transparency: float = 0.0, active_is_lock: bool = False) -> None:
-        """Redraw the board to reflect the full game state.
+    def render(self, grid: Grid, active: "Polyomino | None", transparency: float = 0.0, locked_dirty: bool = False) -> None:
+        """Redraw the board, updating only changed squares.
 
-        This is the **single rendering entry point**.  It redraws only the
-        squares whose state has changed since the last render call:
+        This is the **single rendering entry point**.  It takes a targeted
+        approach to minimise Tkinter canvas operations:
 
-        1. Locked pieces from ``grid`` are drawn with their piece colors.
-        2. The active falling piece is drawn with optional transparency.
-        3. Any previously drawn square that is no longer occupied is erased.
+        * **Active piece delta**: Only the squares that changed between the
+          previous active piece and the new one are erased or repainted.
+          This is O(piece.ordinal) per normal tick instead of O(board area).
+        * **Locked pieces**: Painted only when ``locked_dirty=True`` (e.g.
+          after a row removal that shifts the entire stack).  Otherwise the
+          locked canvas items are left untouched — they were painted when
+          the piece was locked and do not change until the next row removal.
 
         :param grid: The locked-piece occupancy map.
         :param active: The currently falling :class:`Polyomino`, or ``None``.
         :param transparency: Blend factor toward black for locked pieces (0.0 = full color).
-        :param active_is_lock: If ``True``, render the active piece without transparency
-            (used when the piece has just been locked and will be committed to the grid).
+        :param locked_dirty: If ``True``, repaint all locked squares from ``grid``
+            (used after row removal or board clear).
         """
-        desired: dict[Square, Colors] = {}
-
-        # Locked pieces from grid
-        for s, name in grid.occupied().items():
-            # Find the colors for this piece name
-            piece_colors = _PIECE_COLORS.get(name, Colors())
-            if transparency > 0:
-                piece_colors = Colors(
-                    mix_with_black(piece_colors.normal, transparency),
-                    mix_with_black(piece_colors.light, transparency),
-                    mix_with_black(piece_colors.dark, transparency),
-                )
-            desired[s] = piece_colors
-
-        # Active piece
+        # --- Active piece delta ---
         if active is not None:
+            new_active: frozenset[Square] = (
+                frozenset(Square(s.x, 0) for s in active.squares) if self.is_projection else active.squares
+            )
             active_colors = active.colors
-            for s in active.squares:
-                proj_s = Square(s.x, 0) if self.is_projection else s
-                desired[proj_s] = active_colors
 
-        # Erase squares no longer needed
-        for s in list(self._canvas_ids.keys()):
-            if s not in desired:
-                self._erase_square(s)
+            # Erase squares the piece vacated (only if not now a locked square)
+            for s in self._active_squares - new_active:
+                if s not in grid._occupancy:
+                    self._erase_square(s)
 
-        # Draw/update desired squares
-        for s, colors in desired.items():
-            if self._colors.get(s) != colors:
-                self._paint_square(s, colors)
+            # Paint squares the piece moved into
+            for s in new_active - self._active_squares:
+                self._paint_square(s, active_colors)
+
+            # Repaint squares that stayed but whose color changed (e.g. transparency)
+            for s in new_active & self._active_squares:
+                if self._colors.get(s) != active_colors:
+                    self._paint_square(s, active_colors)
+
+            self._active_squares = new_active
+        else:
+            # No active piece: erase any previously drawn active squares
+            for s in self._active_squares:
+                if s not in grid._occupancy:
+                    self._erase_square(s)
+            self._active_squares = frozenset()
+
+        # --- Locked pieces (only when dirty) ---
+        if locked_dirty:
+            # Determine full desired locked state
+            desired_locked: dict[Square, Colors] = {}
+            for s, name in grid.occupied().items():
+                piece_colors = _PIECE_COLORS.get(name, Colors())
+                if transparency > 0:
+                    piece_colors = Colors(
+                        mix_with_black(piece_colors.normal, transparency),
+                        mix_with_black(piece_colors.light, transparency),
+                        mix_with_black(piece_colors.dark, transparency),
+                    )
+                desired_locked[s] = piece_colors
+
+            # Erase locked squares no longer in grid
+            for s in list(self._canvas_ids.keys()):
+                if s not in self._active_squares and s not in desired_locked:
+                    self._erase_square(s)
+
+            # Paint/update locked squares
+            for s, colors in desired_locked.items():
+                if self._colors.get(s) != colors:
+                    self._paint_square(s, colors)
 
     def highlight_full_rows(self, grid: Grid) -> list[int]:
         """Highlight completed rows and return their y-indices.
@@ -1012,9 +1120,10 @@ class Board(tk.Canvas):
         return full_rows
 
     def clear(self) -> None:
-        """Erase all drawn squares from the canvas."""
+        """Erase all drawn squares from the canvas and reset active-piece tracking."""
         for s in list(self._canvas_ids.keys()):
             self._erase_square(s)
+        self._active_squares = frozenset()
 
     def add_pause_cover(self) -> None:
         """Cover the board when game is paused."""
@@ -1183,10 +1292,16 @@ class TetraTile(tk.Frame):
         self.piece_rate.set(self.used["total"].get() / elapsed)
         self.row_rate.set(self.removed_total.get() / elapsed)
 
-    def _render(self) -> None:
-        """Re-render the board and projection/shadow from current game state."""
+    def _render(self, locked_dirty: bool = False) -> None:
+        """Re-render the board and projection/shadow from current game state.
+
+        :param locked_dirty: Pass ``True`` when the locked-piece grid has
+            changed (after a lock or row removal) so the board repaints all
+            locked squares.  ``False`` (the default) only updates the active
+            piece delta, which is O(piece ordinal) instead of O(board area).
+        """
         transparency = 0.15 if self._config.stack_transparency else 0.0
-        self.board.render(self._grid, self.piece, transparency=transparency)
+        self.board.render(self._grid, self.piece, transparency=transparency, locked_dirty=locked_dirty)
 
         match self._config.shadow:
             case "projection":
@@ -1437,11 +1552,14 @@ class TetraTile(tk.Frame):
         for s in piece.squares:
             self._grid[s] = piece.name
         self.piece = None
-        self._render()
-        # Clear shadow
+        # Clear shadow before render so it doesn't linger on the next frame
         for s in self._shadow_squares:
             self.board.delete(f"shadow_{s.x}_{s.y}")
         self._shadow_squares = frozenset()
+        # Render the locked piece in piece colors, then immediately highlight
+        # any full rows over the top.  Both calls are synchronous within the
+        # same Tk frame so only the highlight color is ever displayed.
+        self._render(locked_dirty=True)
         self._sync_logger_time()
         self.event_logger.log(EventType.piece_lock, piece_type=piece.name)
         if self.board.highlight_full_rows(self._grid):
@@ -1463,6 +1581,7 @@ class TetraTile(tk.Frame):
             board=tuple(tuple(row) for row in board_state),
             current_piece=self.piece.name if self.piece else None,
             current_piece_coords=self.piece.squares if self.piece else frozenset(),
+            current_piece_rotation=_rotation_state(self.piece) if self.piece else -1,
             next_piece=self.next_piece.name if self.next_piece else None,
             stats=self._get_stats(),
             state=self.state,
@@ -1658,7 +1777,7 @@ class TetraTile(tk.Frame):
             moved = self.next_piece.translate(t, preview_grid)
             if moved is not None:
                 self.next_piece = moved
-            self.preview_board.render(Grid(self.preview_board.width, self.preview_board.height), self.next_piece)
+            self.preview_board.render(preview_grid, self.next_piece)
 
         if not self.next_piece:
             get_next_piece()
@@ -1695,31 +1814,6 @@ class TetraTile(tk.Frame):
             self.event_logger.save()
             self.set_state(GameState.over)
 
-    def _rotate_no_kick(self, r: Rotation) -> "Polyomino | None":
-        """Rotate the active piece without any boundary kick correction.
-
-        Used when :attr:`GameConfig.kick` is disabled.  Only the in-place
-        (zero-kick) rotation is attempted; if it is blocked, returns ``None``.
-
-        :param r: :class:`Rotation` to apply.
-        :returns: Rotated :class:`Polyomino`, or ``None`` if blocked.
-        """
-        if self.piece is None:
-            return None
-        piece = self.piece
-        ox, oy = piece.origin
-        d = r.steps
-        new_squares = frozenset(
-            Square(
-                int(d * (s.y - oy) + ox),
-                int(-d * (s.x - ox) + oy),
-            )
-            for s in piece.squares
-        )
-        if not self._grid.check(new_squares):
-            return None
-        return Polyomino(squares=new_squares, origin=piece.origin, colors=piece.colors, name=piece.name)
-
     def move_piece(self, t: EigenTransformation) -> bool:
         """Apply a transformation to the active piece.
 
@@ -1746,12 +1840,12 @@ class TetraTile(tk.Frame):
         if self.state != GameState.running or self.piece is None:
             return False
 
-        result: Polyomino | None
+        result: Polyomino | None = None
         match t:
             case Translation():
                 result = self.piece.translate(t, self._grid)
             case Rotation():
-                result = self.piece.rotate(t, self._grid) if self._config.kick else self._rotate_no_kick(t)
+                result = self.piece.rotate(t, self._grid, kick=self._config.kick)
 
         if result is None:
             return False
@@ -1806,9 +1900,9 @@ class TetraTile(tk.Frame):
 
         self._grid._occupancy = new_occupancy
 
-        # Re-render board from scratch
+        # Re-render board from scratch after row removal (locked state changed)
         self.board.clear()
-        self._render()
+        self._render(locked_dirty=True)
 
         self._update_removed(full_count)
         if full_count > 0:

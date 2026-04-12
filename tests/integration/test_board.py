@@ -46,12 +46,12 @@ class TestBoardRender:
             assert s not in board._canvas_ids
 
     def test_render_locked_piece_from_grid(self, board: Board, grid: Grid) -> None:
-        """Squares committed to the grid are rendered as locked pieces."""
+        """Squares committed to the grid are rendered as locked pieces when locked_dirty=True."""
         for s in grid:
             if s.x < 2 and s.y < 2:
                 grid[s] = "T"
 
-        board.render(grid, None)
+        board.render(grid, None, locked_dirty=True)
 
         for s in grid._occupancy:
             assert s in board._canvas_ids
