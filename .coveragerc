@@ -1,0 +1,5 @@
+[run]
+omit =
+    */tetratile/config_ui.py
+    */tetratile/log_viewer.py
+    */tetratile/__main__.py

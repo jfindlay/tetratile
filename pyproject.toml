@@ -1,0 +1,133 @@
+[project]
+name = "tetratile"
+dynamic = ["version"]
+authors = [
+  { name="Justin Findlay", email="justin@findlay.space" },
+]
+description = "Tetromino tessellation game"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.0",
+]
+
+[project.scripts]
+tetratile = "tetratile.__main__:main"
+
+[project.urls]
+"Homepage" = "https://github.com/jfindlay/tetratile/"
+"Repository" = "https://github.com/jfindlay/tetratile/"
+"Bug Tracker" = "https://github.com/jfindlay/tetratile/issues/"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+    "pyfakefs",
+    "ruff",
+    "mypy",
+    "pyupgrade",
+    "tox",
+    "tox-uv",
+]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tetratile"]
+
+[tool.hatch.build.targets.sdist]
+packages = ["src/tetratile"]
+
+[tool.hatch.envs.default]
+pythonpath = ["src"]
+
+[tool.hatch.scripts]
+tetratile = "tetratile.__main__:main"
+
+[tool.pyupgrade]
+keep-percent-format = true
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+show_error_codes = true
+disable_error_code = ["override"]
+
+[tool.ruff]
+line-length = 128
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+
+
+[tool.pylint."MESSAGES CONTROL"]
+disable = [
+    "duplicate-code",
+    "logging-fstring-interpolation",
+    "redefined-builtin",
+    "too-few-public-methods",
+    "too-many-arguments",
+    "useless-suppression",
+]
+
+[tool.pylint.FORMAT]
+max-line-length = 128
+
+[tool.tox]
+env_list = ["lint", "fmt", "type", "upgrade", "unit", "integration"]
+skip_missing_interpreters = true
+
+[tool.tox.env_run_base]
+package = "editable"
+usedevelop = true
+deps = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+    "mypy>=1.0",
+    "ruff>=0.6",
+    "pyupgrade>=0.50",
+]
+
+[tool.tox.testenv_lint]
+description = "Run ruff linter"
+commands = [["ruff", "check", "src/", "tests/"]]
+
+[tool.tox.testenv_fmt]
+description = "Run ruff formatter (check mode)"
+commands = [["ruff", "format", "src/", "tests/", "--check"]]
+
+[tool.tox.testenv_type]
+description = "Run mypy type checker"
+commands = [["mypy", "src/"]]
+
+[tool.tox.testenv_upgrade]
+description = "Run pyupgrade"
+skip_install = true
+allowlist_externals = ["find"]
+commands = [["find", "src", "tests", "-name", "*.py", "-exec", "pyupgrade", "--exit-zero-even-if-changed", "--py312-plus", "{}", "+"]]
+
+[tool.tox.testenv_unit]
+description = "Run unit tests with coverage"
+commands = [["pytest", "tests/unit/", "--cov=src/tetratile", "--cov-report=term-missing"]]
+
+[tool.tox.testenv_integration]
+description = "Run integration tests"
+deps = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+    "mypy>=1.0",
+    "ruff>=0.6",
+    "pyupgrade>=0.50",
+    "pytest-mock",
+    "pyfakefs",
+]
+commands = [["pytest", "tests/integration/"]]
