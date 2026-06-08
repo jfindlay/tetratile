@@ -2,6 +2,9 @@
 
 from pathlib import Path
 
+from pyfakefs.fake_filesystem import FakeFilesystem
+from pytest_mock import MockerFixture
+
 from tetratile.config import GameConfig
 from tetratile.event_log import EventLogger, EventType, GameLog
 
@@ -42,6 +45,7 @@ class TestEventLogging:
         logger.log(EventType.piece_move, piece_type="T", direction="left")
 
         log = logger.get_log()
+        assert log.events is not None
         assert len(log.events) == 1
         assert log.events[0].type == EventType.piece_move
         assert log.events[0].piece_type == "T"
@@ -55,6 +59,7 @@ class TestEventLogging:
         logger.log(EventType.piece_rotate, piece_type="T", direction="CW")
 
         log = logger.get_log()
+        assert log.events is not None
         assert len(log.events) == 1
         assert log.events[0].type == EventType.piece_rotate
         assert log.events[0].direction == "CW"
@@ -67,6 +72,7 @@ class TestEventLogging:
         logger.log(EventType.piece_lock, piece_type="T")
 
         log = logger.get_log()
+        assert log.events is not None
         assert len(log.events) == 1
         assert log.events[0].type == EventType.piece_lock
         assert log.events[0].piece_type == "T"
@@ -79,6 +85,7 @@ class TestEventLogging:
         logger.log(EventType.row_clear, count=2)
 
         log = logger.get_log()
+        assert log.events is not None
         assert len(log.events) == 1
         assert log.events[0].type == EventType.row_clear
         assert log.events[0].count == 2
@@ -94,6 +101,7 @@ class TestEventLogging:
         logger.log(EventType.piece_lock, piece_type="T")
 
         log = logger.get_log()
+        assert log.events is not None
         assert len(log.events) == 4
         assert log.events[0].type == EventType.piece_spawn
         assert log.events[1].type == EventType.piece_move
@@ -113,6 +121,7 @@ class TestEventLogging:
         logger.log(EventType.piece_lock, piece_type="T")
 
         log = logger.get_log()
+        assert log.events is not None
         assert log.events[0].elapsed == dt.timedelta(milliseconds=100)
         assert log.events[1].elapsed == dt.timedelta(milliseconds=200)
 
@@ -141,13 +150,14 @@ class TestEventLogging:
         restored = GameLog.from_json(json_str)
 
         assert restored.game_id == logger.get_log().game_id
+        assert restored.events is not None
         assert len(restored.events) == 3
         assert restored.events[0].type == EventType.piece_spawn
         assert restored.events[1].type == EventType.piece_move
         assert restored.events[2].type == EventType.row_clear
         assert restored.stats == {"pieces": 1, "rows_cleared": 1}
 
-    def test_save_to_file(self, mocker, fs) -> None:
+    def test_save_to_file(self, mocker: MockerFixture, fs: FakeFilesystem) -> None:
         """Test saving event log to filesystem."""
         log_dir = Path("/fake/logs")
         logger = EventLogger(log_dir=log_dir)

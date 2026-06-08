@@ -7,6 +7,8 @@ correctly in open space, that kicks are applied when needed near walls,
 and that four rotations always return to the original position.
 """
 
+from typing import ClassVar
+
 import pytest
 
 from tetratile import Grid, Polyomino, Rotation, Square, Translation, _boundary_kicks, tetrominoes
@@ -108,7 +110,9 @@ class TestRotationOpenSpace:
         """Create a standard 10x22 grid."""
         return Grid(10, 22)
 
-    ROTATABLE = [i for i in range(len(tetrominoes)) if tetrominoes[i].name != "o"]
+    ROTATABLE: ClassVar[list[int]] = [
+        i for i in range(len(tetrominoes)) if tetrominoes[i].name != "o"
+    ]
 
     @pytest.mark.parametrize("piece_idx", ROTATABLE)
     def test_cw_rotation_succeeds(self, piece_idx: int, grid: Grid) -> None:
@@ -141,7 +145,9 @@ class TestRotationOpenSpace:
         result = moved.rotate(Rotation(1), grid)
         # rotate() either returns None (blocked by self-overlap check) or the same squares
         if result is not None:
-            assert result.squares == moved.squares, "O piece rotation should produce the same squares"
+            assert result.squares == moved.squares, (
+                "O piece rotation should produce the same squares"
+            )
 
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_four_cw_returns_original_squares(self, piece_idx: int, grid: Grid) -> None:
@@ -158,7 +164,9 @@ class TestRotationOpenSpace:
                 break
             current = rotated
 
-        assert current.squares == original_squares, f"{piece.name} 4 CW rotations did not return to original squares"
+        assert current.squares == original_squares, (
+            f"{piece.name} 4 CW rotations did not return to original squares"
+        )
 
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_four_ccw_returns_original_squares(self, piece_idx: int, grid: Grid) -> None:

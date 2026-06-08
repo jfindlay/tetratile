@@ -199,41 +199,25 @@ Optional paragraph with more details. Can span multiple lines.
 
 - **Runtime**: pydantic>=2.0
 - **Build**: hatchling, hatch-vcs
-- **Dev**: pytest, pytest-cov, pytest-mock, pyfakefs, ruff, mypy, pyupgrade, tox, tox-uv
+- **Dev**: pytest, pytest-cov, pytest-mock, pyfakefs, ruff, mypy
 
 ## Build & Test Commands
 
 ```bash
-# Install in development mode
-uv pip install -e ".[dev]"
+# Install all deps including dev
+uv sync
 
-# Run all tests
-uv run pytest tests/
+# Build + test + check_type + check_lint
+uvx tox -m check
 
-# Run unit tests with coverage
-uv run pytest tests/unit/ --cov=src/tetratile --cov-report=term-missing
+# Auto-fix imports and formatting
+uvx tox -e fix_format
 
-# Run integration tests
-uv run pytest tests/integration/
-
-# Run linting
-uv run ruff check src/ tests/
-
-# Run formatting check
-uv run ruff format src/ tests/ --check
-
-# Run type checking
-uv run mypy src/
-
-# Run pyupgrade
-uv run pyupgrade --py312-plus src/ tests/
-
-# Run tox (parallel)
-tox -p auto
-
-# Run specific tox environment
-tox -e lint
-tox -e unit
+# Run individual tox environments
+uvx tox -e build        # build wheel
+uvx tox -e test         # run all tests with coverage
+uvx tox -e check_type   # mypy type checking
+uvx tox -e check_lint   # ruff lint + format check
 
 # Build package wheel
 uv build --wheel
@@ -244,7 +228,8 @@ uv build --wheel
 ```
 tetratile/
 ├── docs/
-│   └── mathematics.rst  # Mathematical treatise
+│   ├── mathematics.rst  # Mathematical treatise
+│   └── BACKLOG.md       # Deferred issues and known gaps
 ├── src/tetratile/
 │   ├── __init__.py      # Core types, Polyomino, Grid, Board, TetraTile
 │   ├── __main__.py      # CLI entry point
@@ -274,9 +259,8 @@ tetratile/
 │       ├── test_row_removal.py
 │       ├── test_srs_rotation.py  # boundary kick and rotation tests
 │       └── test_translation.py
-├── pyproject.toml        # Project configuration
-├── tox.ini              # Tox configuration
-├── .pre-commit-config.yaml  # Pre-commit hooks
+├── .coveragerc           # Coverage configuration (omit patterns, fail_under)
+├── pyproject.toml        # Project configuration (tox, ruff, mypy, pytest)
 └── README.md            # User documentation
 ```
 

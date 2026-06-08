@@ -130,7 +130,7 @@ class TestPrintObserver:
 
     def _make_obs(self) -> GameObservation:
         """Create a minimal fake observation."""
-        board_list = [[None] * 10 for _ in range(22)]
+        board_list: list[list[str | None]] = [[None] * 10 for _ in range(22)]
         board_list[0][3] = "T"  # bottom row, column 3
         return GameObservation(
             board=tuple(tuple(row) for row in board_list),
@@ -143,7 +143,7 @@ class TestPrintObserver:
             elapsed=datetime.timedelta(seconds=5),
         )
 
-    def test_print_observer_writes_to_stdout(self, capsys: pytest.CaptureFixture) -> None:
+    def test_print_observer_writes_to_stdout(self, capsys: pytest.CaptureFixture[str]) -> None:
         """PrintObserver.on_observation writes board state to stdout."""
         observer = PrintObserver()
         obs = self._make_obs()
@@ -153,7 +153,7 @@ class TestPrintObserver:
         assert "Piece:" in captured.out
         assert "Rows cleared:" in captured.out
 
-    def test_print_observer_shows_occupied_cell(self, capsys: pytest.CaptureFixture) -> None:
+    def test_print_observer_shows_occupied_cell(self, capsys: pytest.CaptureFixture[str]) -> None:
         """PrintObserver output contains the piece name for occupied cells."""
         observer = PrintObserver()
         obs = self._make_obs()
@@ -194,7 +194,13 @@ class TestRandomAgent:
         """RandomAgent only returns movement actions (not pause/full-drop/lock)."""
         agent = RandomAgent()
         obs = self._make_obs()
-        non_movement = {Action.toggle_pause, Action.full_drop, Action.lock_piece, Action.move_left_max, Action.move_right_max}
+        non_movement = {
+            Action.toggle_pause,
+            Action.full_drop,
+            Action.lock_piece,
+            Action.move_left_max,
+            Action.move_right_max,
+        }
         for _ in range(50):
             action = agent.select_action(obs)
             assert action not in non_movement

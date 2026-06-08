@@ -36,7 +36,7 @@ from .output import PrintObserver
 if TYPE_CHECKING:
     from . import GameObservation
 
-from . import GameState, TetraTile  # noqa: E402
+from . import GameState, TetraTile
 
 
 @dataclass

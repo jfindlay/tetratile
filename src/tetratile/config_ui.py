@@ -65,28 +65,43 @@ class ConfigUI(tk.Toplevel):
 
         self._screen_scale_var = tk.BooleanVar()
         ttk.Checkbutton(
-            parent, text="Auto-scale to screen", variable=self._screen_scale_var, command=self._on_screen_scale_changed
+            parent,
+            text="Auto-scale to screen",
+            variable=self._screen_scale_var,
+            command=self._on_screen_scale_changed,
         ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 4))
         ttk.Label(
-            parent, text="Automatically calculate scale from screen size on startup", font=("TkDefaultFont", 8, "italic")
+            parent,
+            text="Automatically calculate scale from screen size on startup",
+            font=("TkDefaultFont", 8, "italic"),
         ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
         ttk.Label(parent, text="Scale:").grid(row=3, column=0, sticky="w")
         self._scale_var = tk.IntVar()
         self._scale_slider = ttk.Scale(
-            parent, from_=8, to=64, orient="horizontal", variable=self._scale_var, command=self._on_modified
+            parent,
+            from_=8,
+            to=64,
+            orient="horizontal",
+            variable=self._scale_var,
+            command=self._on_modified,
         )
         self._scale_slider.grid(row=3, column=1, sticky="ew")
         self._scale_value = ttk.Label(parent, text="32")
         self._scale_value.grid(row=3, column=2, padx=(8, 0))
-        ttk.Label(parent, text="Pixel size of each block", font=("TkDefaultFont", 8, "italic")).grid(
-            row=4, column=0, columnspan=3, sticky="w", pady=(0, 8)
-        )
+        ttk.Label(
+            parent, text="Pixel size of each block", font=("TkDefaultFont", 8, "italic")
+        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
         ttk.Label(parent, text="Width:").grid(row=5, column=0, sticky="w")
         self._width_var = tk.IntVar()
         self._width_slider = ttk.Scale(
-            parent, from_=5, to=30, orient="horizontal", variable=self._width_var, command=self._on_modified
+            parent,
+            from_=5,
+            to=30,
+            orient="horizontal",
+            variable=self._width_var,
+            command=self._on_modified,
         )
         self._width_slider.grid(row=5, column=1, sticky="ew")
         self._width_value = ttk.Label(parent, text="10")
@@ -98,7 +113,12 @@ class ConfigUI(tk.Toplevel):
         ttk.Label(parent, text="Height:").grid(row=7, column=0, sticky="w")
         self._height_var = tk.IntVar()
         self._height_slider = ttk.Scale(
-            parent, from_=10, to=50, orient="horizontal", variable=self._height_var, command=self._on_modified
+            parent,
+            from_=10,
+            to=50,
+            orient="horizontal",
+            variable=self._height_var,
+            command=self._on_modified,
         )
         self._height_slider.grid(row=7, column=1, sticky="ew")
         self._height_value = ttk.Label(parent, text="22")
@@ -118,19 +138,31 @@ class ConfigUI(tk.Toplevel):
         ttk.Label(parent, text="Initial Rate:").grid(row=1, column=0, sticky="w")
         self._initial_rate_var = tk.DoubleVar()
         self._initial_rate_slider = ttk.Scale(
-            parent, from_=0.0, to=10.0, orient="horizontal", variable=self._initial_rate_var, command=self._on_modified
+            parent,
+            from_=0.0,
+            to=10.0,
+            orient="horizontal",
+            variable=self._initial_rate_var,
+            command=self._on_modified,
         )
         self._initial_rate_slider.grid(row=1, column=1, sticky="ew")
         self._initial_rate_value = ttk.Label(parent, text="0.0")
         self._initial_rate_value.grid(row=1, column=2, padx=(8, 0))
-        ttk.Label(parent, text="Starting fall rate (blocks/second), 0 = manual only", font=("TkDefaultFont", 8, "italic")).grid(
-            row=2, column=0, columnspan=3, sticky="w", pady=(0, 8)
-        )
+        ttk.Label(
+            parent,
+            text="Starting fall rate (blocks/second), 0 = manual only",
+            font=("TkDefaultFont", 8, "italic"),
+        ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
         ttk.Label(parent, text="Min Rate:").grid(row=3, column=0, sticky="w")
         self._min_rate_var = tk.DoubleVar()
         self._min_rate_slider = ttk.Scale(
-            parent, from_=0.0, to=5.0, orient="horizontal", variable=self._min_rate_var, command=self._on_modified
+            parent,
+            from_=0.0,
+            to=5.0,
+            orient="horizontal",
+            variable=self._min_rate_var,
+            command=self._on_modified,
         )
         self._min_rate_slider.grid(row=3, column=1, sticky="ew")
         self._min_rate_value = ttk.Label(parent, text="0.0")
@@ -140,59 +172,90 @@ class ConfigUI(tk.Toplevel):
         )
 
         self._constant_var = tk.BooleanVar()
-        ttk.Checkbutton(parent, text="Constant Fall Rate", variable=self._constant_var, command=self._on_modified).grid(
-            row=5, column=0, columnspan=3, sticky="w", pady=(0, 4)
-        )
-        ttk.Label(parent, text="Keep fall rate fixed instead of increasing", font=("TkDefaultFont", 8, "italic")).grid(
-            row=6, column=0, columnspan=3, sticky="w", pady=(0, 8)
-        )
+        ttk.Checkbutton(
+            parent,
+            text="Constant Fall Rate",
+            variable=self._constant_var,
+            command=self._on_modified,
+        ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        ttk.Label(
+            parent,
+            text="Keep fall rate fixed instead of increasing",
+            font=("TkDefaultFont", 8, "italic"),
+        ).grid(row=6, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
         ttk.Label(parent, text="Remove Frequency:").grid(row=7, column=0, sticky="w")
         self._remove_freq_var = tk.IntVar()
         self._remove_freq_slider = ttk.Scale(
-            parent, from_=1, to=10, orient="horizontal", variable=self._remove_freq_var, command=self._on_modified
+            parent,
+            from_=1,
+            to=10,
+            orient="horizontal",
+            variable=self._remove_freq_var,
+            command=self._on_modified,
         )
         self._remove_freq_slider.grid(row=7, column=1, sticky="ew")
         self._remove_freq_value = ttk.Label(parent, text="1")
         self._remove_freq_value.grid(row=7, column=2, padx=(8, 0))
-        ttk.Label(parent, text="Full rows to complete before removal check", font=("TkDefaultFont", 8, "italic")).grid(
-            row=8, column=0, columnspan=3, sticky="w", pady=(0, 12)
-        )
+        ttk.Label(
+            parent,
+            text="Full rows to complete before removal check",
+            font=("TkDefaultFont", 8, "italic"),
+        ).grid(row=8, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
-        ttk.Separator(parent, orient="horizontal").grid(row=9, column=0, columnspan=3, sticky="ew", pady=(0, 12))
+        ttk.Separator(parent, orient="horizontal").grid(
+            row=9, column=0, columnspan=3, sticky="ew", pady=(0, 12)
+        )
 
         ttk.Label(parent, text="Shadow Display:", font=("TkDefaultFont", 10, "bold")).grid(
             row=10, column=0, columnspan=3, sticky="w", pady=(0, 8)
         )
 
         self._shadow_var = tk.StringVar(value="projection")
-        ttk.Radiobutton(parent, text="None", variable=self._shadow_var, value="none", command=self._on_modified).grid(
-            row=11, column=0, columnspan=3, sticky="w", padx=(0, 20)
-        )
         ttk.Radiobutton(
-            parent, text="Projection (below board)", variable=self._shadow_var, value="projection", command=self._on_modified
+            parent, text="None", variable=self._shadow_var, value="none", command=self._on_modified
+        ).grid(row=11, column=0, columnspan=3, sticky="w", padx=(0, 20))
+        ttk.Radiobutton(
+            parent,
+            text="Projection (below board)",
+            variable=self._shadow_var,
+            value="projection",
+            command=self._on_modified,
         ).grid(row=12, column=0, columnspan=3, sticky="w", padx=(0, 20))
         ttk.Radiobutton(
-            parent, text="Shadow (overlay on stack)", variable=self._shadow_var, value="shadow", command=self._on_modified
+            parent,
+            text="Shadow (overlay on stack)",
+            variable=self._shadow_var,
+            value="shadow",
+            command=self._on_modified,
         ).grid(row=13, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
-        ttk.Separator(parent, orient="horizontal").grid(row=14, column=0, columnspan=3, sticky="ew", pady=(0, 12))
+        ttk.Separator(parent, orient="horizontal").grid(
+            row=14, column=0, columnspan=3, sticky="ew", pady=(0, 12)
+        )
 
         self._kick_var = tk.BooleanVar()
-        ttk.Checkbutton(parent, text="Enable Kick Moves", variable=self._kick_var, command=self._on_modified).grid(
-            row=15, column=0, columnspan=3, sticky="w", pady=(0, 4)
-        )
-        ttk.Label(parent, text="Try offset positions when rotation fails", font=("TkDefaultFont", 8, "italic")).grid(
-            row=16, column=0, columnspan=3, sticky="w", pady=(0, 8)
-        )
+        ttk.Checkbutton(
+            parent, text="Enable Kick Moves", variable=self._kick_var, command=self._on_modified
+        ).grid(row=15, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        ttk.Label(
+            parent,
+            text="Try offset positions when rotation fails",
+            font=("TkDefaultFont", 8, "italic"),
+        ).grid(row=16, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
         self._stack_transparency_var = tk.BooleanVar()
         ttk.Checkbutton(
-            parent, text="Stack Transparency", variable=self._stack_transparency_var, command=self._on_modified
+            parent,
+            text="Stack Transparency",
+            variable=self._stack_transparency_var,
+            command=self._on_modified,
         ).grid(row=17, column=0, columnspan=3, sticky="w", pady=(0, 4))
-        ttk.Label(parent, text="Mix placed pieces with black for depth (~15%%)", font=("TkDefaultFont", 8, "italic")).grid(
-            row=18, column=0, columnspan=3, sticky="w"
-        )
+        ttk.Label(
+            parent,
+            text="Mix placed pieces with black for depth (~15%%)",
+            font=("TkDefaultFont", 8, "italic"),
+        ).grid(row=18, column=0, columnspan=3, sticky="w")
 
         parent.columnconfigure(1, weight=1)
 
@@ -224,12 +287,16 @@ class ConfigUI(tk.Toplevel):
             entry = ttk.Entry(parent, textvariable=var, width=12, state="readonly")
             entry.grid(row=i, column=1, sticky="w", pady=2)
             self._key_entries[action] = entry
-            btn = ttk.Button(parent, text="Record", command=functools.partial(self._record_key, action))
+            btn = ttk.Button(
+                parent, text="Record", command=functools.partial(self._record_key, action)
+            )
             btn.grid(row=i, column=2, padx=(8, 0), pady=2)
 
-        ttk.Label(parent, text="Click Record, then press a key to assign", font=("TkDefaultFont", 8, "italic")).grid(
-            row=len(key_actions) + 1, column=0, columnspan=3, sticky="w", pady=(12, 0)
-        )
+        ttk.Label(
+            parent,
+            text="Click Record, then press a key to assign",
+            font=("TkDefaultFont", 8, "italic"),
+        ).grid(row=len(key_actions) + 1, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
         parent.columnconfigure(1, weight=1)
 
@@ -238,9 +305,13 @@ class ConfigUI(tk.Toplevel):
         btn_frame = ttk.Frame(self, padding=8)
         btn_frame.pack(fill="x")
 
-        ttk.Button(btn_frame, text="Cancel", command=self._on_cancel).pack(side="right", padx=(4, 0))
+        ttk.Button(btn_frame, text="Cancel", command=self._on_cancel).pack(
+            side="right", padx=(4, 0)
+        )
         ttk.Button(btn_frame, text="Apply", command=self._on_apply).pack(side="right")
-        ttk.Button(btn_frame, text="Save & Close", command=self._on_save_close).pack(side="right", padx=(0, 4))
+        ttk.Button(btn_frame, text="Save & Close", command=self._on_save_close).pack(
+            side="right", padx=(0, 4)
+        )
 
     def _record_key(self, action: str) -> None:
         """Start key recording for an action."""

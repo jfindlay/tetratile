@@ -1,5 +1,15 @@
+# Coverage configuration for tetratile.
+#
+# NOTE: fail_under is set to 39 (the tox-measured coverage) because:
+#  1. The AgentRunner.run() always creates tk.Tk(), which requires $DISPLAY.
+#     Eight integration tests fail headlessly; see docs/BACKLOG.md.
+#  2. Pure tkinter UI-wiring modules (__main__, config_ui, input_human,
+#     log_viewer) have no standalone testable logic; see docs/BACKLOG.md.
+# Raise fail_under once the backlog items are resolved.
 [run]
-omit =
-    */tetratile/config_ui.py
-    */tetratile/log_viewer.py
-    */tetratile/__main__.py
+source = tetratile
+branch = true
+
+[report]
+show_missing = true
+fail_under = 39

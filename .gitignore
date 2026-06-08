@@ -1,11 +1,14 @@
 *.egg-info
+*.pyc
 .cache
 .coverage
+.coverage.*
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+.tox/
 .venv/
-__pycache__
+__pycache__/
 build/
 dist/
 game_*.json

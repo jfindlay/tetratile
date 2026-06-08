@@ -41,6 +41,7 @@ def all_tetrominoes(grid: Grid) -> list[Polyomino]:
     result = []
     for p in tetrominoes:
         moved = p.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        assert moved is not None, f"Tetromino {p.name!r} failed to translate to grid centre"
         result.append(moved)
     return result
 

@@ -53,7 +53,12 @@ class TestPolyomino:
         squares = frozenset({Square(1, 2), Square(3, 4), Square(2, 1)})
         import decimal
 
-        p = Polyomino(squares=squares, origin=(decimal.Decimal(2), decimal.Decimal(2)), colors=Colors(), name="T")
+        p = Polyomino(
+            squares=squares,
+            origin=(decimal.Decimal(2), decimal.Decimal(2)),
+            colors=Colors(),
+            name="T",
+        )
         assert p.min_x == 1
 
     def test_max_x(self) -> None:
@@ -61,7 +66,12 @@ class TestPolyomino:
         squares = frozenset({Square(1, 2), Square(3, 4), Square(2, 1)})
         import decimal
 
-        p = Polyomino(squares=squares, origin=(decimal.Decimal(2), decimal.Decimal(2)), colors=Colors(), name="T")
+        p = Polyomino(
+            squares=squares,
+            origin=(decimal.Decimal(2), decimal.Decimal(2)),
+            colors=Colors(),
+            name="T",
+        )
         assert p.max_x == 3
 
     def test_min_y(self) -> None:
@@ -69,7 +79,12 @@ class TestPolyomino:
         squares = frozenset({Square(1, 2), Square(3, 4), Square(2, 1)})
         import decimal
 
-        p = Polyomino(squares=squares, origin=(decimal.Decimal(2), decimal.Decimal(2)), colors=Colors(), name="T")
+        p = Polyomino(
+            squares=squares,
+            origin=(decimal.Decimal(2), decimal.Decimal(2)),
+            colors=Colors(),
+            name="T",
+        )
         assert p.min_y == 1
 
     def test_max_y(self) -> None:
@@ -77,7 +92,12 @@ class TestPolyomino:
         squares = frozenset({Square(1, 2), Square(3, 4), Square(2, 1)})
         import decimal
 
-        p = Polyomino(squares=squares, origin=(decimal.Decimal(2), decimal.Decimal(2)), colors=Colors(), name="T")
+        p = Polyomino(
+            squares=squares,
+            origin=(decimal.Decimal(2), decimal.Decimal(2)),
+            colors=Colors(),
+            name="T",
+        )
         assert p.max_y == 4
 
     def test_rotate_value_semantics(self) -> None:
@@ -85,7 +105,9 @@ class TestPolyomino:
         for piece_type in tetrominoes:
             if piece_type.name == "o":
                 continue
-            moved = piece_type.translate(Translation(self.grid.width // 2, self.grid.height // 2), self.grid)
+            moved = piece_type.translate(
+                Translation(self.grid.width // 2, self.grid.height // 2), self.grid
+            )
             assert moved is not None
             original_squares = moved.squares
             rotated = moved.rotate(Rotation(1), self.grid)
@@ -98,7 +120,9 @@ class TestPolyomino:
     def test_translate_value_semantics(self) -> None:
         """Polyomino.translate returns a new Polyomino, not mutating the original."""
         for piece_type in tetrominoes:
-            moved = piece_type.translate(Translation(self.grid.width // 2, self.grid.height // 2), self.grid)
+            moved = piece_type.translate(
+                Translation(self.grid.width // 2, self.grid.height // 2), self.grid
+            )
             assert moved is not None
             original_squares = moved.squares
             translated = moved.translate(Translation(1, 0), self.grid)
@@ -117,7 +141,9 @@ class TestPolyomino:
     def test_four_cw_rotations_return_to_original(self) -> None:
         """Four CW rotations return piece to original square set."""
         for piece_type in tetrominoes:
-            moved = piece_type.translate(Translation(self.grid.width // 2, self.grid.height // 2), self.grid)
+            moved = piece_type.translate(
+                Translation(self.grid.width // 2, self.grid.height // 2), self.grid
+            )
             assert moved is not None
             original_squares = moved.squares
             current = moved
@@ -126,7 +152,9 @@ class TestPolyomino:
                 if rotated is None:
                     break
                 current = rotated
-            assert current.squares == original_squares, f"{piece_type.name} did not return after 4 CW rotations"
+            assert current.squares == original_squares, (
+                f"{piece_type.name} did not return after 4 CW rotations"
+            )
 
 
 class TestGrid:
@@ -310,7 +338,9 @@ class TestRotationState:
             assert piece is not None
             assert _rotation_state(piece) == 0, f"{piece_type.name} spawn state should be 0"
 
-    @pytest.mark.parametrize("piece_idx", [i for i in range(len(tetrominoes)) if tetrominoes[i].name != "o"])
+    @pytest.mark.parametrize(
+        "piece_idx", [i for i in range(len(tetrominoes)) if tetrominoes[i].name != "o"]
+    )
     def test_cw_rotations_cycle_0_1_2_3(self, piece_idx: int) -> None:
         """Four successive CW rotations produce states 1, 2, 3, 0 in order (non-O pieces)."""
         piece_type = tetrominoes[piece_idx]
@@ -326,7 +356,9 @@ class TestRotationState:
                 f"{piece_type.name} expected state {expected}, got {_rotation_state(current)}"
             )
 
-    @pytest.mark.parametrize("piece_idx", [i for i in range(len(tetrominoes)) if tetrominoes[i].name != "o"])
+    @pytest.mark.parametrize(
+        "piece_idx", [i for i in range(len(tetrominoes)) if tetrominoes[i].name != "o"]
+    )
     def test_ccw_rotations_cycle_3_2_1_0(self, piece_idx: int) -> None:
         """Four successive CCW rotations produce states 3, 2, 1, 0 in order (non-O pieces)."""
         piece_type = tetrominoes[piece_idx]
@@ -379,4 +411,6 @@ class TestRotationState:
                 assert rotated is not None, f"{piece_type.name} rotation failed"
                 current = rotated
                 states.append(_rotation_state(current))
-            assert len(set(states)) == 4, f"{piece_type.name} rotation states not all distinct: {states}"
+            assert len(set(states)) == 4, (
+                f"{piece_type.name} rotation states not all distinct: {states}"
+            )

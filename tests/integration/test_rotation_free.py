@@ -4,6 +4,8 @@ Tests rotation in open space (center of standard 10x22 grid) to validate
 that piece transformations are correct regardless of initial orientation.
 """
 
+from typing import ClassVar
+
 import pytest
 
 from tetratile import Grid, Rotation, Translation, tetrominoes
@@ -17,7 +19,9 @@ class TestFreeRotationCW:
         """Create a standard 10x22 grid."""
         return Grid(10, 22)
 
-    ROTATABLE_INDICES = [i for i in range(len(tetrominoes)) if tetrominoes[i].name != "o"]
+    ROTATABLE_INDICES: ClassVar[list[int]] = [
+        i for i in range(len(tetrominoes)) if tetrominoes[i].name != "o"
+    ]
 
     @pytest.mark.parametrize("piece_idx", ROTATABLE_INDICES)
     def test_cw_rotation_from_spawn(self, piece_idx: int, grid: Grid) -> None:
@@ -140,7 +144,9 @@ class TestFourRotationsReturn:
                 break
             current = rotated
 
-        assert current.squares == original_squares, f"{piece.name} 4 CW rotations did not return to original squares"
+        assert current.squares == original_squares, (
+            f"{piece.name} 4 CW rotations did not return to original squares"
+        )
 
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_four_ccw_returns_original(self, piece_idx: int, grid: Grid) -> None:

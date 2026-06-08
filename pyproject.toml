@@ -2,11 +2,16 @@
 name = "tetratile"
 dynamic = ["version"]
 authors = [
-  { name="Justin Findlay", email="justin@findlay.space" },
+    { name = "Justin Findlay", email = "justin@findlay.space" },
 ]
 description = "Tetromino tessellation game"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "GPL-3.0-or-later"
+classifiers = [
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+]
 dependencies = [
     "pydantic>=2.0",
 ]
@@ -19,18 +24,8 @@ tetratile = "tetratile.__main__:main"
 "Repository" = "https://github.com/jfindlay/tetratile/"
 "Bug Tracker" = "https://github.com/jfindlay/tetratile/issues/"
 
-[project.optional-dependencies]
-dev = [
-    "pytest",
-    "pytest-cov",
-    "pytest-mock",
-    "pyfakefs",
-    "ruff",
-    "mypy",
-    "pyupgrade",
-    "tox",
-    "tox-uv",
-]
+[dependency-groups]
+dev = ["pytest", "pytest-mock", "pytest-cov", "pyfakefs", "mypy", "ruff"]
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
@@ -42,92 +37,86 @@ source = "vcs"
 [tool.hatch.build.targets.wheel]
 packages = ["src/tetratile"]
 
-[tool.hatch.build.targets.sdist]
-packages = ["src/tetratile"]
-
-[tool.hatch.envs.default]
-pythonpath = ["src"]
-
-[tool.hatch.scripts]
-tetratile = "tetratile.__main__:main"
-
-[tool.pyupgrade]
-keep-percent-format = true
+# ---------------------------------------------------------------------------
+# Type checking
+# ---------------------------------------------------------------------------
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
-warn_unused_configs = true
-show_error_codes = true
-disable_error_code = ["override"]
+
+# ---------------------------------------------------------------------------
+# Linting and formatting (ruff)
+# ---------------------------------------------------------------------------
 
 [tool.ruff]
-line-length = 128
-target-version = "py312"
+line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
-
-
-[tool.pylint."MESSAGES CONTROL"]
-disable = [
-    "duplicate-code",
-    "logging-fstring-interpolation",
-    "redefined-builtin",
-    "too-few-public-methods",
-    "too-many-arguments",
-    "useless-suppression",
+# E/W: pycodestyle  F: pyflakes  I: isort  N: pep8-naming
+# UP: pyupgrade     B: flake8-bugbear  C4: flake8-comprehensions
+# SIM: flake8-simplify  TID: flake8-tidy-imports  RUF: ruff-native
+select = ["E", "W", "F", "I", "N", "UP", "B", "C4", "SIM", "TID", "RUF"]
+ignore = [
+    "E501",   # line too long — handled by the formatter
+    "N817",   # Decimal as D — deliberate abbreviation for half-integer arithmetic
+    "RUF002", # ambiguous Unicode in docstrings — intentional mathematical notation
+    "RUF003", # ambiguous Unicode in comments — intentional mathematical notation
 ]
 
-[tool.pylint.FORMAT]
-max-line-length = 128
+[tool.ruff.format]
+# Black-compatible formatting defaults; explicit for clarity.
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+# ---------------------------------------------------------------------------
+# Testing
+# ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=tetratile --cov-report=term-missing"
+
+# Coverage configuration lives in .coveragerc (omit patterns require
+# file-based config to be applied before pytest-cov initialises coverage).
+
+# ---------------------------------------------------------------------------
+# Tox
+# ---------------------------------------------------------------------------
 
 [tool.tox]
-env_list = ["lint", "fmt", "type", "upgrade", "unit", "integration"]
-skip_missing_interpreters = true
+requires = ["tox-uv"]
+isolated_build = true
+labels = { check = [
+    "build",
+    "test",
+    "check_type",
+    "check_lint",
+], format = ["fix_format"] }
 
-[tool.tox.env_run_base]
-package = "editable"
-usedevelop = true
-deps = [
-    "pytest>=8.0",
-    "pytest-cov>=4.0",
-    "mypy>=1.0",
-    "ruff>=0.6",
-    "pyupgrade>=0.50",
+[tool.tox.env.build]
+package = "wheel"
+wheel_build_env = ".pkg"
+
+[tool.tox.env.test]
+dependency_groups = ["dev"]
+commands = [["pytest", "tests/"]]
+
+[tool.tox.env.check_type]
+dependency_groups = ["dev"]
+commands = [["mypy", "src/", "tests/"]]
+
+[tool.tox.env.check_lint]
+dependency_groups = ["dev"]
+commands = [
+    ["ruff", "check", "src/", "tests/"],
+    ["ruff", "format", "--check", "src/", "tests/"],
 ]
 
-[tool.tox.testenv_lint]
-description = "Run ruff linter"
-commands = [["ruff", "check", "src/", "tests/"]]
-
-[tool.tox.testenv_fmt]
-description = "Run ruff formatter (check mode)"
-commands = [["ruff", "format", "src/", "tests/", "--check"]]
-
-[tool.tox.testenv_type]
-description = "Run mypy type checker"
-commands = [["mypy", "src/"]]
-
-[tool.tox.testenv_upgrade]
-description = "Run pyupgrade"
-skip_install = true
-allowlist_externals = ["find"]
-commands = [["find", "src", "tests", "-name", "*.py", "-exec", "pyupgrade", "--exit-zero-even-if-changed", "--py312-plus", "{}", "+"]]
-
-[tool.tox.testenv_unit]
-description = "Run unit tests with coverage"
-commands = [["pytest", "tests/unit/", "--cov=src/tetratile", "--cov-report=term-missing"]]
-
-[tool.tox.testenv_integration]
-description = "Run integration tests"
-deps = [
-    "pytest>=8.0",
-    "pytest-cov>=4.0",
-    "mypy>=1.0",
-    "ruff>=0.6",
-    "pyupgrade>=0.50",
-    "pytest-mock",
-    "pyfakefs",
+[tool.tox.env.fix_format]
+dependency_groups = ["dev"]
+commands = [
+    ["ruff", "check", "--fix", "src/", "tests/"],
+    ["ruff", "format", "src/", "tests/"],
 ]
-commands = [["pytest", "tests/integration/"]]

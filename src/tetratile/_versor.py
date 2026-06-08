@@ -56,7 +56,9 @@ def rotate_point(
     :raises NotImplementedError: If ``plane != (0, 1)``.
     """
     if plane != (0, 1):
-        raise NotImplementedError(f"plane {plane!r} is not yet supported; only (0, 1) is implemented")
+        raise NotImplementedError(
+            f"plane {plane!r} is not yet supported; only (0, 1) is implemented"
+        )
 
     # Normalise to {0, 1, 2, 3}; negative steps map to CCW equivalents.
     n = steps % 4

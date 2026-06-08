@@ -19,7 +19,9 @@ class LogViewer(tk.Toplevel):
     :attr on_highlight: Callback when event is highlighted.
     """
 
-    def __init__(self, parent: tk.Tk, logger: EventLogger, on_highlight: Callable[[int], None] | None = None) -> None:
+    def __init__(
+        self, parent: tk.Tk, logger: EventLogger, on_highlight: Callable[[int], None] | None = None
+    ) -> None:
         """Initialize the log viewer.
 
         :param parent: Parent window.
@@ -52,12 +54,20 @@ class LogViewer(tk.Toplevel):
         control_frame = ttk.Frame(self, padding=8)
         control_frame.pack(fill="x")
 
-        ttk.Button(control_frame, text="|◀", width=4, command=self._step_start).pack(side="left", padx=2)
-        ttk.Button(control_frame, text="◀", width=4, command=self._step_back).pack(side="left", padx=2)
+        ttk.Button(control_frame, text="|◀", width=4, command=self._step_start).pack(
+            side="left", padx=2
+        )
+        ttk.Button(control_frame, text="◀", width=4, command=self._step_back).pack(
+            side="left", padx=2
+        )
         self._play_btn = ttk.Button(control_frame, text="▶", width=4, command=self._play_pause)
         self._play_btn.pack(side="left", padx=2)
-        ttk.Button(control_frame, text="▶|", width=4, command=self._step_end).pack(side="left", padx=2)
-        ttk.Button(control_frame, text="◀|", width=4, command=self._step_forward_end).pack(side="left", padx=2)
+        ttk.Button(control_frame, text="▶|", width=4, command=self._step_end).pack(
+            side="left", padx=2
+        )
+        ttk.Button(control_frame, text="◀|", width=4, command=self._step_forward_end).pack(
+            side="left", padx=2
+        )
 
         ttk.Frame(self, height=2, relief="sunken").pack(fill="x", padx=8)
 
@@ -67,7 +77,9 @@ class LogViewer(tk.Toplevel):
         scrollbar = ttk.Scrollbar(list_frame)
         scrollbar.pack(side="right", fill="y")
 
-        self._listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set, font=("Monospace", 10), height=20)
+        self._listbox = tk.Listbox(
+            list_frame, yscrollcommand=scrollbar.set, font=("Monospace", 10), height=20
+        )
         self._listbox.pack(side="left", fill="both", expand=True)
         self._listbox.bind("<<ListboxSelect>>", self._on_select)
         scrollbar.config(command=self._listbox.yview)

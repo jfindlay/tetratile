@@ -23,7 +23,9 @@ def _remove_full_rows(grid: Grid) -> int:
     """
     width, height = grid.width, grid.height
 
-    full_rows = [y for y in range(height) if all(Square(x, y) in grid._occupancy for x in range(width))]
+    full_rows = [
+        y for y in range(height) if all(Square(x, y) in grid._occupancy for x in range(width))
+    ]
 
     if not full_rows:
         return 0

@@ -112,7 +112,10 @@ class PrintObserver(OutputHandler):
         print(digits * " " + "+" + 2 * width * "-" + "+")
         for y in range(height - 1, -1, -1):
             row = obs.board[y]
-            row_image = "".join(("  " if cell is None else (cell * 2 if len(cell) == 1 else cell[:2])) for cell in row)
+            row_image = "".join(
+                ("  " if cell is None else (cell * 2 if len(cell) == 1 else cell[:2]))
+                for cell in row
+            )
             print(row_fmt.format(height - 1 - y) + "|" + row_image + "|")
         print(digits * " " + "+" + 2 * width * "-" + "+")
         print("=" * 40)

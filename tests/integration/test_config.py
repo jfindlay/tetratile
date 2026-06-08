@@ -95,13 +95,17 @@ class TestXdgConfigPath:
         path = _xdg_config_file()
         assert path == Path.home() / ".config" / "tetratile" / "config.toml"
 
-    def test_xdg_config_home_env_is_honoured(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_xdg_config_home_env_is_honoured(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         """_xdg_config_file() uses $XDG_CONFIG_HOME when set."""
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
         path = _xdg_config_file()
         assert path == tmp_path / "tetratile" / "config.toml"
 
-    def test_from_file_no_args_uses_xdg(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_from_file_no_args_uses_xdg(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         """GameConfig.from_file() with no arguments resolves to the XDG path."""
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
 
@@ -115,7 +119,9 @@ class TestXdgConfigPath:
         assert loaded.board.width == 15
         assert loaded.config_file == config_file
 
-    def test_write_to_file_no_args_uses_xdg(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def test_write_to_file_no_args_uses_xdg(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
         """write_to_file() with no arguments writes to the XDG path."""
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
 

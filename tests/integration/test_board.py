@@ -140,7 +140,9 @@ class TestBoardRenderDelta:
         """Create a fresh Grid."""
         return Grid(config.board.width, config.board.height)
 
-    def test_locked_squares_not_painted_without_locked_dirty(self, board: Board, grid: Grid) -> None:
+    def test_locked_squares_not_painted_without_locked_dirty(
+        self, board: Board, grid: Grid
+    ) -> None:
         """Locked squares in grid are NOT painted when locked_dirty is False (default)."""
         grid[Square(0, 0)] = "T"
         grid[Square(1, 0)] = "T"

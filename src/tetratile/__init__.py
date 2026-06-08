@@ -446,7 +446,9 @@ class Grid:
         row_fmt = f"{{:0{digits}}}"
         print(digits * " " + "+" + self.width * "-" + "+")
         for y in reversed(range(self.height)):
-            row = "".join((self._occupancy.get(Square(x, y), ".")[:1] or ".") for x in range(self.width))
+            row = "".join(
+                (self._occupancy.get(Square(x, y), ".")[:1] or ".") for x in range(self.width)
+            )
             print(row_fmt.format(self.height - y - 1) + "|" + row + "|")
         print(digits * " " + "+" + self.width * "-" + "+")
 
@@ -602,13 +604,17 @@ class Polyomino:
             return Square(int(rx + ox), int(ry + oy))
 
         new_squares = frozenset(_rotate_square(s) for s in self.squares)
-        rotated = Polyomino(squares=new_squares, origin=self.origin, colors=self.colors, name=self.name)
+        rotated = Polyomino(
+            squares=new_squares, origin=self.origin, colors=self.colors, name=self.name
+        )
         kicks = _boundary_kicks(rotated, grid) if kick else iter((Translation(0, 0),))
         for k in kicks:
             candidate = frozenset(Square(s.x + k.dx, s.y + k.dy) for s in new_squares)
             if grid.check(candidate):
                 new_origin = (self.origin[0] + k.dx, self.origin[1] + k.dy)
-                return Polyomino(squares=candidate, origin=new_origin, colors=self.colors, name=self.name)
+                return Polyomino(
+                    squares=candidate, origin=new_origin, colors=self.colors, name=self.name
+                )
         return None
 
 
@@ -758,7 +764,7 @@ class TetrominoType(enum.Enum):
         light="#FCFC79",
         dark="#80803B",
     )
-    o = TetrominoData(  # noqa: E741
+    o = TetrominoData(
         name="o",
         squares=frozenset({Square(-1, 0), Square(-1, -1), Square(0, 0), Square(0, -1)}),
         origin=(D("-0.5"), D("-0.5")),
@@ -967,7 +973,14 @@ class Board(tk.Canvas):
     :attr height: Grid height in squares (set at construction).
     """
 
-    def __init__(self, config: GameConfig, parent: tk.Misc, width: int, height: int, is_projection: bool = False) -> None:
+    def __init__(
+        self,
+        config: GameConfig,
+        parent: tk.Misc,
+        width: int,
+        height: int,
+        is_projection: bool = False,
+    ) -> None:
         """Initialize the board.
 
         :param config: Game configuration.
@@ -1064,7 +1077,13 @@ class Board(tk.Canvas):
         self._canvas_ids[s] = self._draw_square(s, colors)
         self._colors[s] = colors
 
-    def render(self, grid: Grid, active: "Polyomino | None", transparency: float = 0.0, locked_dirty: bool = False) -> None:
+    def render(
+        self,
+        grid: Grid,
+        active: "Polyomino | None",
+        transparency: float = 0.0,
+        locked_dirty: bool = False,
+    ) -> None:
         """Redraw the board, updating only changed squares.
 
         This is the **single rendering entry point**.  It takes a targeted
@@ -1087,7 +1106,9 @@ class Board(tk.Canvas):
         # --- Active piece delta ---
         if active is not None:
             new_active: frozenset[Square] = (
-                frozenset(Square(s.x, 0) for s in active.squares) if self.is_projection else active.squares
+                frozenset(Square(s.x, 0) for s in active.squares)
+                if self.is_projection
+                else active.squares
             )
             active_colors = active.colors
 
@@ -1182,7 +1203,9 @@ class Board(tk.Canvas):
 
 
 # Lookup table: piece name -> Colors, built from TetrominoType for O(1) render.
-_PIECE_COLORS: dict[str, Colors] = {t.value.name: Colors(t.value.normal, t.value.light, t.value.dark) for t in TetrominoType}
+_PIECE_COLORS: dict[str, Colors] = {
+    t.value.name: Colors(t.value.normal, t.value.light, t.value.dark) for t in TetrominoType
+}
 
 
 # ---------------------------------------------------------------------------
@@ -1336,7 +1359,9 @@ class TetraTile(tk.Frame):
             piece delta, which is O(piece ordinal) instead of O(board area).
         """
         transparency = 0.15 if self._config.stack_transparency else 0.0
-        self.board.render(self._grid, self.piece, transparency=transparency, locked_dirty=locked_dirty)
+        self.board.render(
+            self._grid, self.piece, transparency=transparency, locked_dirty=locked_dirty
+        )
 
         match self._config.shadow:
             case "projection":
@@ -1430,7 +1455,9 @@ class TetraTile(tk.Frame):
         self.board.pack(side="top")
 
         if self._config.shadow == "projection":
-            self.projection_board = Board(scaled_config, self.game, scaled_config.board.width, 1, is_projection=True)
+            self.projection_board = Board(
+                scaled_config, self.game, scaled_config.board.width, 1, is_projection=True
+            )
             self.projection_board.pack(side="top")
         else:
             self.projection_board = None
@@ -1453,7 +1480,9 @@ class TetraTile(tk.Frame):
 
         self.piece_rate_frame = tk.LabelFrame(self.marquee, text="piece rate")
         self.piece_rate_frame.pack(side="top")
-        self.piece_rate_display = tk.Label(self.piece_rate_frame, textvariable=self.piece_rate.variable)
+        self.piece_rate_display = tk.Label(
+            self.piece_rate_frame, textvariable=self.piece_rate.variable
+        )
         self.piece_rate_display.pack(side="left")
         self.piece_rate_unit = tk.Label(self.piece_rate_frame, text="pieces/sec")
         self.piece_rate_unit.pack(side="left")
@@ -1494,14 +1523,18 @@ class TetraTile(tk.Frame):
             removed_widget["unit"].pack(side="left")
         removed_widget["frame"] = tk.Frame(self.removed_frame, width=12)
         removed_widget["frame"].pack(side="top")
-        removed_widget["quantity"] = tk.Label(removed_widget["frame"], textvariable=self.removed_total)
+        removed_widget["quantity"] = tk.Label(
+            removed_widget["frame"], textvariable=self.removed_total
+        )
         removed_widget["quantity"].pack(side="left")
         removed_widget["unit"] = tk.Label(removed_widget["frame"], text="total")
         removed_widget["unit"].pack(side="left")
 
         self.time_elapsed_frame = tk.LabelFrame(self.marquee, text="elapsed time")
         self.time_elapsed_frame.pack(side="top")
-        self.time_elapsed_display = tk.Label(self.time_elapsed_frame, textvariable=self.time_elapsed.variable, width=12)
+        self.time_elapsed_display = tk.Label(
+            self.time_elapsed_frame, textvariable=self.time_elapsed.variable, width=12
+        )
         self.time_elapsed_display.pack(side="top")
 
         self.state_display = tk.Label(self.marquee, textvariable=self.state_name)
@@ -1632,7 +1665,9 @@ class TetraTile(tk.Frame):
 
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="Preferences...", command=lambda: ConfigUI(self.master, self._config))
+        file_menu.add_command(
+            label="Preferences...", command=lambda: ConfigUI(self.master, self._config)
+        )
         file_menu.add_separator()
         file_menu.add_command(label="View Event Log", command=self._show_log_viewer)
         file_menu.add_command(label="Save Event Log", command=self._save_log)
@@ -1695,7 +1730,7 @@ class TetraTile(tk.Frame):
             that handler swaps take effect without rebinding.
             """
 
-            def callback(event: tk.Event) -> None:  # noqa: ARG001
+            def callback(event: tk.Event) -> None:
                 """Dispatch the bound key event to the active input handler."""
                 getattr(self._input_handler, method_name)()
 
@@ -1807,7 +1842,9 @@ class TetraTile(tk.Frame):
             # Centre piece in preview board
             cx = self.preview_board.width // 2
             cy = self.preview_board.height // 2
-            t = Translation(cx - int(self.next_piece.origin[0]), cy - int(self.next_piece.origin[1]))
+            t = Translation(
+                cx - int(self.next_piece.origin[0]), cy - int(self.next_piece.origin[1])
+            )
             preview_grid = Grid(self.preview_board.width, self.preview_board.height)
             moved = self.next_piece.translate(t, preview_grid)
             if moved is not None:
@@ -1893,12 +1930,18 @@ class TetraTile(tk.Frame):
         match t:
             case Rotation():
                 direction_str = "CW" if t.steps > 0 else "CCW"
-                self.event_logger.log(EventType.piece_rotate, piece_type=old_piece.name, direction=direction_str)
+                self.event_logger.log(
+                    EventType.piece_rotate, piece_type=old_piece.name, direction=direction_str
+                )
             case Translation(dx=dx) if dx != 0:
                 dir_str = "right" if dx > 0 else "left"
-                self.event_logger.log(EventType.piece_move, piece_type=old_piece.name, direction=dir_str)
+                self.event_logger.log(
+                    EventType.piece_move, piece_type=old_piece.name, direction=dir_str
+                )
             case Translation(dy=dy) if dy < 0:
-                self.event_logger.log(EventType.piece_move, piece_type=old_piece.name, direction="down")
+                self.event_logger.log(
+                    EventType.piece_move, piece_type=old_piece.name, direction="down"
+                )
         return True
 
     def remove_full_rows(self) -> None:
@@ -1916,7 +1959,11 @@ class TetraTile(tk.Frame):
         """
         width, height = self.board.width, self.board.height
 
-        full_rows = [y for y in range(height) if all(Square(x, y) in self._grid._occupancy for x in range(width))]
+        full_rows = [
+            y
+            for y in range(height)
+            if all(Square(x, y) in self._grid._occupancy for x in range(width))
+        ]
 
         if not full_rows:
             return
@@ -1955,5 +2002,7 @@ class TetraTile(tk.Frame):
             "pieces": self.used["total"].get(),
             "rows_cleared": self.removed_total.get(),
             "rows_by_count": [var.get() for var in self.removed_by_count],
-            "pieces_by_type": {name: var.get() for name, var in self.used.items() if name != "total"},
+            "pieces_by_type": {
+                name: var.get() for name, var in self.used.items() if name != "total"
+            },
         }

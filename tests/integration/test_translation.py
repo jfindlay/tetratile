@@ -190,7 +190,9 @@ class TestTranslationWithStack:
     @pytest.mark.parametrize("piece_idx", range(len(tetrominoes)))
     def test_down_stops_at_stack(self, piece_idx: int, grid_with_stack: Grid) -> None:
         """Down movement stops above the stack."""
-        piece: Polyomino | None = tetrominoes[piece_idx].translate(Translation(5, 3), grid_with_stack)
+        piece: Polyomino | None = tetrominoes[piece_idx].translate(
+            Translation(5, 3), grid_with_stack
+        )
         assert piece is not None
 
         current = piece

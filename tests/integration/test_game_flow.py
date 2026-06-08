@@ -94,7 +94,9 @@ class TestPieceMovement:
         """Test that a piece already at its leftmost position cannot move further left."""
         piece = random.choice(tetrominoes)
         # Move piece to absolute left wall
-        current: Polyomino | None = piece.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        current: Polyomino | None = piece.translate(
+            Translation(grid.width // 2, grid.height // 2), grid
+        )
         assert current is not None
         while True:
             moved = current.translate(Translation(-1, 0), grid)
@@ -127,7 +129,9 @@ class TestPieceMovement:
     def test_side_movement_to_left_wall(self, grid: Grid) -> None:
         """Test moving piece to left wall (orbit supremum)."""
         piece = random.choice(tetrominoes)
-        current: Polyomino | None = piece.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        current: Polyomino | None = piece.translate(
+            Translation(grid.width // 2, grid.height // 2), grid
+        )
         assert current is not None
 
         while True:
@@ -141,7 +145,9 @@ class TestPieceMovement:
     def test_side_movement_to_right_wall(self, grid: Grid) -> None:
         """Test moving piece to right wall (orbit supremum)."""
         piece = random.choice(tetrominoes)
-        current: Polyomino | None = piece.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        current: Polyomino | None = piece.translate(
+            Translation(grid.width // 2, grid.height // 2), grid
+        )
         assert current is not None
 
         while True:
@@ -155,7 +161,9 @@ class TestPieceMovement:
     def test_bottom_movement(self, grid: Grid) -> None:
         """Test moving piece to bottom (orbit supremum)."""
         piece = random.choice(tetrominoes)
-        current: Polyomino | None = piece.translate(Translation(grid.width // 2, grid.height // 2), grid)
+        current: Polyomino | None = piece.translate(
+            Translation(grid.width // 2, grid.height // 2), grid
+        )
         assert current is not None
 
         while True:

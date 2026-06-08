@@ -149,7 +149,9 @@ class TestWallKickPreservesSquares:
                 rotated = current.rotate(Rotation(1), grid)
                 if rotated is None:
                     break
-                assert rotated.ordinal == initial_count, f"{current.name} lost squares during left wall rotation"
+                assert rotated.ordinal == initial_count, (
+                    f"{current.name} lost squares during left wall rotation"
+                )
                 current = rotated
 
     def test_all_pieces_kick_from_right_wall(self, grid: Grid) -> None:
@@ -163,5 +165,7 @@ class TestWallKickPreservesSquares:
                 rotated = current.rotate(Rotation(1), grid)
                 if rotated is None:
                     break
-                assert rotated.ordinal == initial_count, f"{current.name} lost squares during right wall rotation"
+                assert rotated.ordinal == initial_count, (
+                    f"{current.name} lost squares during right wall rotation"
+                )
                 current = rotated
