@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from decimal import Decimal as D
 from typing import NamedTuple
 
+from ._versor import rotate_point
 from .config import BoardConfig, GameConfig
 from .event_log import EventLogger, EventType
 from .input_handler import InputHandler
@@ -83,13 +84,15 @@ class Square(NamedTuple):
 class Translation(NamedTuple):
     """An element of the translation group :math:`\\mathbb{Z}^2`.
 
+    In the discrete PGA framework (:math:`Cl(2,0,1)`) a translation is
+    realised as a **null-bivector translator** :math:`T = 1 + \\tfrac12 t`,
+    where :math:`t = dx\\,e_{01} + dy\\,e_{02}` encodes the integer
+    displacement vector.  The type retains the direct ``(dx, dy)``
+    representation as the concrete bridge to :math:`\\mathbb{Z}^2`.
+
     ``dx > 0`` is rightward; ``dy > 0`` is upward (y-up Cartesian
     convention throughout).  Gravity is ``Translation(0, -1)`` — an
     explicit negative :math:`y` displacement.
-
-    The term *multiple* (not used here as a field — the dx/dy components
-    carry the scaling directly) signals that only integer displacements
-    are valid on :math:`\\mathbb{Z}^2`.
 
     :attr dx: Horizontal displacement; positive = right.
     :attr dy: Vertical displacement; positive = up.
@@ -102,6 +105,13 @@ class Translation(NamedTuple):
 class Rotation(NamedTuple):
     """An element of the cyclic rotation group :math:`C_4 \\cong \\mathbb{Z}/4\\mathbb{Z}`.
 
+    In the discrete PGA framework (:math:`Cl(2,0,1)`) a quarter-turn is
+    realised by the **integer rotor** :math:`U = 1 + e_{12}` (or its
+    reverse :math:`\\tilde{U} = 1 - e_{12}` for CCW) via the versor
+    sandwich :math:`R(\\mathbf{v}) = U\\,\\mathbf{v}\\,\\tilde{U} / |U|^2`.
+    See :func:`._versor.rotate_point` and :ref:`discrete-rotor` in
+    ``docs/mathematics.rst`` for the lattice-exactness proof.
+
     ``steps=+1`` is one CW quarter-turn; ``steps=-1`` is one CCW
     quarter-turn.  The term *steps* is chosen to match the group-theoretic
     notion of a generator applied ``steps`` times.
@@ -112,7 +122,9 @@ class Rotation(NamedTuple):
     steps: int
 
 
-# type alias: the union of all atomic generators of G = Z^2 ⋊ C_4
+# Atomic generators of G = Z^N ⋊ B_N^+: lattice-stabilising discrete versors
+# of Cl(N,0,1).  Translation = null-bivector translator; Rotation = integer
+# rotor in a chosen Euclidean bivector plane.  See docs/mathematics.rst.
 type EigenTransformation = Translation | Rotation
 
 
@@ -547,28 +559,24 @@ class Polyomino:
     def rotate(self, r: Rotation, grid: Grid, kick: bool = True) -> "Polyomino | None":
         """Rotate the polyomino about its origin, with optional boundary kicks.
 
-        Applies the CW quarter-turn formula in :math:`y`-up Cartesian
-        coordinates:
+        Implements the CW quarter-turn via the **integer rotor** from discrete
+        plane-based geometric algebra (:mod:`._versor`).  For the unnormalised
+        rotor :math:`U = 1 + e_{12}` the versor sandwich gives
 
         .. math::
 
-            (dx, dy) \\;\\longmapsto\\; (dy, -dx)
-            \\quad\\text{for }\\texttt{steps}=+1\\text{ (clockwise)},
+            R(\\mathbf{v}) = U\\,\\mathbf{v}\\,\\tilde{U} / |U|^2
+            = (y,\\,-x)
+            \\quad\\text{(CW, steps = +1)},
 
-            (dx, dy) \\;\\longmapsto\\; (-dy, dx)
-            \\quad\\text{for }\\texttt{steps}=-1\\text{ (counterclockwise).}
+        which is lattice-exact: integer inputs yield integers, and
+        half-integer :class:`~decimal.Decimal` inputs yield half-integers,
+        with no floating-point rounding.  See :ref:`discrete-rotor` in
+        ``docs/mathematics.rst`` for the :math:`\\sqrt{2}`-cancellation proof.
 
-        About pivot :math:`(o_x, o_y)`, cell :math:`(x_i, y_i)` maps to
-
-        .. math::
-
-            x_i' = r \\cdot (y_i - o_y) + o_x, \\qquad
-            y_i' = -r \\cdot (x_i - o_x) + o_y,
-
-        where :math:`r` = ``steps``.  The :func:`int` truncation is exact
-        for integer-centre pieces (T, L, J) and for half-integer-centre
-        pieces (Z, S, I, O) because :class:`~decimal.Decimal` arithmetic
-        preserves ``origin`` without rounding.
+        Each cell :math:`(x_i, y_i)` is rotated by translating to the pivot
+        frame (subtract origin), applying the rotor sandwich ``steps`` times,
+        then translating back (add origin).
 
         When ``kick=True`` (the default), :func:`_boundary_kicks` generates
         corrective :class:`Translation`s derived from bounding-box violations
@@ -588,14 +596,12 @@ class Polyomino:
         :returns: Rotated (and possibly kicked) :class:`Polyomino`, or ``None``.
         """
         ox, oy = self.origin
-        d = r.steps
-        new_squares = frozenset(
-            Square(
-                int(d * (s.y - oy) + ox),
-                int(-d * (s.x - ox) + oy),
-            )
-            for s in self.squares
-        )
+
+        def _rotate_square(s: Square) -> Square:
+            rx, ry = rotate_point(s.x - ox, s.y - oy, r.steps)
+            return Square(int(rx + ox), int(ry + oy))
+
+        new_squares = frozenset(_rotate_square(s) for s in self.squares)
         rotated = Polyomino(squares=new_squares, origin=self.origin, colors=self.colors, name=self.name)
         kicks = _boundary_kicks(rotated, grid) if kick else iter((Translation(0, 0),))
         for k in kicks:
