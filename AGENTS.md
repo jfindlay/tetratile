@@ -16,14 +16,21 @@ deviates from them should be treated as a defect, not a style choice.
 
 The game operates on a finite rectangular sublattice
 :math:`\mathcal{B} \subset \mathbb{Z}^2` (the board) with y-up Cartesian
-orientation (y=0 at the bottom).  Valid piece moves form the **semidirect
-product** :math:`G = \mathbb{Z}^2 \rtimes C_4`, where
-:math:`\mathbb{Z}^2` is the integer translation group and
-:math:`C_4 \cong \mathbb{Z}/4\mathbb{Z}` is the cyclic group of
-quarter-turn rotations.  Reflections are excluded — they produce
-physically distinct pieces (S ≠ Z, L ≠ J) — so the valid rotation group
-is :math:`C_4`, not the full dihedral group :math:`D_4`.  This is why the
-game has **7 one-sided** tetrominoes rather than 5 free ones.
+orientation (y=0 at the bottom).  Valid piece moves are the
+**lattice-stabilising discrete versors** (motors) of the plane-based
+geometric algebra :math:`Cl(2,0,1)` — see ``### On Geometric Algebra``
+below and ``docs/mathematics.rst``.  A motor unifies translation and
+rotation under one composition law (the versor sandwich).
+
+The **concrete realisation** of this versor group, retained as a bridge to
+standard group theory and to the code's types, is the semidirect product
+:math:`G = \mathbb{Z}^2 \rtimes C_4`, where :math:`\mathbb{Z}^2` is the
+integer translation group and :math:`C_4 \cong \mathbb{Z}/4\mathbb{Z}` is
+the cyclic group of quarter-turn rotations.  Reflections are excluded —
+they produce physically distinct pieces (S ≠ Z, L ≠ J) — so the valid
+rotation group is :math:`C_4`, not the full dihedral group :math:`D_4`.
+This is why the game has **7 one-sided** tetrominoes rather than 5 free
+ones.
 
 ### Eigentransformations
 
@@ -102,23 +109,41 @@ privileged access to the game.
 
 ### N-Dimensional Generalization
 
-The design anticipates N-dimensional polyhypercube games.
-``Translation`` becomes an N-vector; ``Rotation`` gains a
-``plane: tuple[int,int]`` parameter (selecting which of
-:math:`\binom{N}{2}` coordinate planes to rotate in).  The rotation
-formula is already in the N-dimensional form, hardcoded to plane
-``(0, 1)`` for 2D.  ``_boundary_kicks`` extends to all N axes.  The
-proper rotation subgroup of the hyperoctahedral group :math:`B_N` is the
-target rotation group.
+The design anticipates N-dimensional polyhypercube games, with the
+algebra :math:`Cl(N,0,1)` as the uniform framework.  ``Translation``
+becomes an N-vector (a product of null-bivector translators);
+``Rotation`` gains a ``plane: tuple[int,int]`` parameter that selects a
+Euclidean **bivector** :math:`e_{ij}` — one of the :math:`\binom{N}{2}`
+rotation planes.  The rotation formula is already in the N-dimensional
+form, with the single bivector :math:`e_{12}` (plane ``(0, 1)``)
+hardcoded for 2D.  ``_boundary_kicks`` extends to all N axes.  The
+concrete-realisation rotation group is the proper rotation subgroup
+:math:`B_N^+` of the hyperoctahedral group :math:`B_N`.
 
-### On Clifford Algebra (CA) and Geometric Algebra (GA)
+### On Geometric Algebra (GA / Clifford Algebra)
 
-Clifford algebra (CA, also called geometric algebra or GA) is considered
-and **set aside**.  The discrete lattice constraint (:math:`\mathbb{Z}^N`,
-not :math:`\mathbb{R}^N`) and the non-native encoding of translations in
-:math:`Cl(N)` make GA less natural than the direct
-:math:`\mathbb{Z}^N \rtimes B_N^+` formulation.  GA would be relevant for
-a continuous-physics extension of the game.
+Discrete **plane-based geometric algebra** (PGA) — the lattice-stabilising
+versor subgroup of :math:`Cl(N,0,1)` — is the **primary** mathematical
+framework, chosen deliberately for unification and pedagogy.  A single
+**motor** encodes both translation and rotation; one composition law (the
+versor sandwich) governs every move; the construction generalises
+uniformly to N dimensions.  The semidirect product
+:math:`\mathbb{Z}^N \rtimes B_N^+` and the rotation matrices are retained
+as **bridges** to standard group theory and to the code's
+``Translation`` / ``Rotation`` types — the same group in older language.
+
+The earlier "set aside" verdict was reversed.  The continuity objection
+(rotors live in continuous :math:`\mathrm{Spin}(N)`) is answered by the
+word *discrete*: only the finite order-4 rotors and integer translators
+are used.  The translation-overhead objection was overstated — plane-based
+PGA adds a single null generator :math:`e_0`, not a heavy embedding, and
+translations become native.  The integer rotor :math:`U = 1 + e_{ij}`
+(divided by :math:`\lVert U \rVert^2 = 2`) is lattice-exact: the
+:math:`\sqrt 2` cancels in every sandwich, so rotation needs no floating
+point or ``Decimal``.  Conformal GA remains unnecessary; it would matter
+only for a continuous-physics extension.  Full treatment in
+``docs/mathematics.rst``; the code refactor is planned in
+``docs/PLAN.md``.
 
 ## Docstring Standards
 
