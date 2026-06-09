@@ -64,14 +64,21 @@ class TestAgentRunnerBasic:
         """A custom Agent.select_action is called during the run."""
 
         class CountingAgent(Agent):
-            """Agent that counts how many times it was called."""
+            """Agent that counts how many times it was called.
+
+            :attr call_count: Number of :meth:`select_action` calls received.
+            """
 
             def __init__(self) -> None:
-                """Initialise call counter."""
+                """Initialise call counter to zero."""
                 self.call_count = 0
 
             def select_action(self, obs: GameObservation) -> Action:
-                """Record call and return a safe action."""
+                """Increment :attr:`call_count` and return :attr:`Action.soft_drop`.
+
+                :param obs: The current :class:`GameObservation` (unused).
+                :returns: :attr:`Action.soft_drop`.
+                """
                 self.call_count += 1
                 return Action.soft_drop
 
@@ -84,10 +91,14 @@ class TestAgentRunnerBasic:
         """Without max_steps, runner plays until game-over (small board fills quickly)."""
 
         class AlwaysDropAgent(Agent):
-            """Agent that only full-drops, filling the board fast."""
+            """Agent that always full-drops, filling the board as fast as possible."""
 
             def select_action(self, obs: GameObservation) -> Action:
-                """Always full drop."""
+                """Return :attr:`Action.full_drop` unconditionally.
+
+                :param obs: The current :class:`GameObservation` (unused).
+                :returns: :attr:`Action.full_drop`.
+                """
                 return Action.full_drop
 
         runner = AgentRunner(config=config, agent=AlwaysDropAgent(), show_gui=False)

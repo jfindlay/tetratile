@@ -37,8 +37,7 @@ evangelising.  See :ref:`geometric-algebra` for the foundation and
 :ref:`n-dimensional` for the generalisation.
 
 This document is the authoritative mathematical reference for the
-codebase.  All descriptions reflect the current implementation
-(see ``AGENTS.md`` for the design-principles summary).
+codebase.  All descriptions reflect the current implementation.
 
 
 The Integer Lattice :math:`\mathbb{Z}^2`
@@ -463,8 +462,8 @@ through all four rotation states without rounding.  By the equivalence
 established in :ref:`discrete-rotor`, an equivalent integer-exact
 implementation may instead apply the unnormalised rotor :math:`U = 1 +
 e_{12}` and divide by :math:`\lVert U \rVert^2 = 2`, requiring neither
-floating point nor :class:`~decimal.Decimal` for the rotation step (see
-``docs/PLAN.md`` for the refactor).
+floating point nor :class:`~decimal.Decimal` for the rotation step (tracked
+in ``docs/BACKLOG.md``).
 
 :meth:`Polyomino.rotate` accepts a ``kick: bool = True`` parameter.
 When ``True`` (the default), boundary kicks are applied via

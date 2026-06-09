@@ -1,9 +1,9 @@
 """Integration tests for event logging."""
 
+import datetime as dt
 from pathlib import Path
 
 from pyfakefs.fake_filesystem import FakeFilesystem
-from pytest_mock import MockerFixture
 
 from tetratile.config import GameConfig
 from tetratile.event_log import EventLogger, EventType, GameLog
@@ -110,8 +110,6 @@ class TestEventLogging:
 
     def test_elapsed_time_increments(self) -> None:
         """Test that elapsed time is recorded."""
-        import datetime as dt
-
         logger = EventLogger()
         logger.start(GameConfig())
 
@@ -127,14 +125,18 @@ class TestEventLogging:
 
     def test_stop_records_stats(self) -> None:
         """Test that stopping records final stats."""
+        from tetratile import GameStats
+
         logger = EventLogger()
         logger.start(GameConfig())
 
-        stats = {"pieces": 10, "rows_cleared": 5}
+        stats = GameStats(pieces=10, rows_cleared=5, rows_by_count=[], pieces_by_type={})
         logger.stop(stats)
 
         log = logger.get_log()
-        assert log.stats == stats
+        assert log.stats is not None
+        assert log.stats["pieces"] == 10
+        assert log.stats["rows_cleared"] == 5
         assert log.timestamp_end is not None
 
     def test_json_serialization_roundtrip(self) -> None:
@@ -144,7 +146,9 @@ class TestEventLogging:
         logger.log(EventType.piece_spawn, piece_type="T")
         logger.log(EventType.piece_move, piece_type="T", direction="left")
         logger.log(EventType.row_clear, count=1)
-        logger.stop({"pieces": 1, "rows_cleared": 1})
+        from tetratile import GameStats
+
+        logger.stop(GameStats(pieces=1, rows_cleared=1, rows_by_count=[], pieces_by_type={}))
 
         json_str = logger.to_json()
         restored = GameLog.from_json(json_str)
@@ -155,15 +159,19 @@ class TestEventLogging:
         assert restored.events[0].type == EventType.piece_spawn
         assert restored.events[1].type == EventType.piece_move
         assert restored.events[2].type == EventType.row_clear
-        assert restored.stats == {"pieces": 1, "rows_cleared": 1}
+        assert restored.stats is not None
+        assert restored.stats["pieces"] == 1
+        assert restored.stats["rows_cleared"] == 1
 
-    def test_save_to_file(self, mocker: MockerFixture, fs: FakeFilesystem) -> None:
+    def test_save_to_file(self, fs: FakeFilesystem) -> None:
         """Test saving event log to filesystem."""
+        from tetratile import GameStats
+
         log_dir = Path("/fake/logs")
         logger = EventLogger(log_dir=log_dir)
         logger.start(GameConfig())
         logger.log(EventType.piece_spawn, piece_type="T")
-        logger.stop({"pieces": 1})
+        logger.stop(GameStats(pieces=1, rows_cleared=0, rows_by_count=[], pieces_by_type={}))
 
         path = logger.save()
 
@@ -180,10 +188,13 @@ class TestEventLogging:
         logger = EventLogger()
         logger.start(config)
 
+        from typing import cast
+
         log = logger.get_log()
         assert log.config is not None
-        assert log.config["board"]["width"] == 15
-        assert log.config["board"]["height"] == 25
+        board_cfg = cast(dict[str, object], log.config["board"])
+        assert board_cfg["width"] == 15
+        assert board_cfg["height"] == 25
 
     def test_seed_reproducibility(self) -> None:
         """Test that seed is recorded for reproducibility."""

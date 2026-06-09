@@ -17,29 +17,39 @@ def _remove_full_rows(grid: Grid) -> int:
 
     Mirrors the logic in :meth:`.TetraTile.remove_full_rows` but operates
     directly on a :class:`Grid` without requiring a running game or Tkinter.
+    Uses only the public :class:`Grid` API (``occupied()``, ``__getitem__``,
+    ``__setitem__``, ``__iter__``).
 
     :param grid: The :class:`Grid` to modify.
     :returns: Number of full rows removed.
     """
     width, height = grid.width, grid.height
 
+    # Detect full rows using the public occupied() dict.
+    occupied = grid.occupied()
     full_rows = [
-        y for y in range(height) if all(Square(x, y) in grid._occupancy for x in range(width))
+        y for y in range(height) if all(grid[Square(x, y)] is not None for x in range(width))
     ]
 
     if not full_rows:
         return 0
 
     full_set = set(full_rows)
-    new_occupancy: dict[Square, str] = {}
-    for s, name in grid.occupied().items():
+
+    # Compute the new occupancy from surviving (non-full) cells, shifted down.
+    survivors: dict[Square, str] = {}
+    for s, name in occupied.items():
         if s.y in full_set:
             continue
         rows_below = sum(1 for fy in full_rows if fy < s.y)
-        new_s = Square(s.x, s.y - rows_below)
-        new_occupancy[new_s] = name
+        survivors[Square(s.x, s.y - rows_below)] = name
 
-    grid._occupancy = new_occupancy
+    # Clear all cells then write survivors back via the public setter.
+    for s in grid:
+        grid[s] = None
+    for s, name in survivors.items():
+        grid[s] = name
+
     return len(full_rows)
 
 

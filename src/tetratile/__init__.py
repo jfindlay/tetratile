@@ -1,4 +1,3 @@
-# !/usr/bin/env python3
 """Tetromino tessellation game on the integer lattice :math:`\\mathbb{Z}^2`.
 
 The game operates on a finite rectangular sublattice
@@ -26,7 +25,7 @@ import typing
 from collections.abc import Iterator
 from dataclasses import dataclass
 from decimal import Decimal as D
-from typing import NamedTuple
+from typing import NamedTuple, TypedDict
 
 from ._versor import rotate_point
 from .config import BoardConfig, GameConfig
@@ -43,6 +42,7 @@ __all__ = [
     "GameEvent",
     "GameObservation",
     "GameState",
+    "GameStats",
     "Grid",
     "Polyomino",
     "Rotation",
@@ -151,6 +151,21 @@ class Colors(NamedTuple):
 # ---------------------------------------------------------------------------
 
 
+class GameStats(TypedDict):
+    """Game statistics dictionary returned by :meth:`TetraTile._get_stats`.
+
+    :attr pieces: Total number of pieces placed.
+    :attr rows_cleared: Total number of rows cleared.
+    :attr rows_by_count: Simultaneous-clear counts (index 0 = 1-row clears, etc.).
+    :attr pieces_by_type: Mapping of piece name to usage count.
+    """
+
+    pieces: int
+    rows_cleared: int
+    rows_by_count: list[int]
+    pieces_by_type: dict[str, int]
+
+
 class GameState(enum.StrEnum):
     """Game states.
 
@@ -212,7 +227,7 @@ class GameObservation:
     current_piece_coords: frozenset[Square]
     current_piece_rotation: int
     next_piece: str | None
-    stats: dict[str, typing.Any]
+    stats: GameStats
     state: GameState
     elapsed: dt.timedelta
 
@@ -600,6 +615,14 @@ class Polyomino:
         ox, oy = self.origin
 
         def _rotate_square(s: Square) -> Square:
+            """Apply the versor sandwich to a single square.
+
+            Translates ``s`` to origin frame, applies the :math:`C_4` rotor
+            sandwich for ``r.steps`` quarter-turns, then translates back.
+
+            :param s: The :class:`Square` to rotate.
+            :returns: The rotated :class:`Square`.
+            """
             rx, ry = rotate_point(s.x - ox, s.y - oy, r.steps)
             return Square(int(rx + ox), int(ry + oy))
 
@@ -855,7 +878,7 @@ class PrecisionVar:
 
         :returns: Formatted string.
         """
-        return f"{{:.{self._precision}f}}".format(self._float_value)
+        return f"{self._float_value:.{self._precision}f}"
 
     def get(self, raw: bool = False) -> float | str:
         """Get the current value.
@@ -894,7 +917,8 @@ class TimerVar:
         :param value: Initial elapsed time. Defaults to zero.
         """
         self._accumulated_elapsed = value if value is not None else dt.timedelta()
-        self._active_counting_since: dt.datetime | dt.timedelta = dt.timedelta()
+        # None means "not counting"; a datetime means "counting since this moment".
+        self._active_counting_since: dt.datetime | None = None
         self._var = tk.StringVar(value=self._to_str(self._accumulated_elapsed))
 
     def _to_str(self, value: dt.timedelta) -> str:
@@ -912,10 +936,11 @@ class TimerVar:
         :returns: The elapsed time.
         """
         computed: dt.timedelta
-        if isinstance(self._active_counting_since, dt.datetime):
-            computed = dt.datetime.now() - self._active_counting_since + self._accumulated_elapsed
-        else:
-            computed = self._accumulated_elapsed
+        match self._active_counting_since:
+            case dt.datetime() as since:
+                computed = dt.datetime.now() - since + self._accumulated_elapsed
+            case _:
+                computed = self._accumulated_elapsed
         self._var.set(self._to_str(computed))
         return computed.total_seconds() if as_seconds else self._var.get()
 
@@ -925,18 +950,19 @@ class TimerVar:
         :param value: New elapsed time. Defaults to zero.
         """
         self._accumulated_elapsed = value if value is not None else dt.timedelta()
-        self._active_counting_since = dt.timedelta()
+        self._active_counting_since = None
 
     def start(self) -> None:
         """Start the timer."""
-        if not self._active_counting_since:
+        if self._active_counting_since is None:
             self._active_counting_since = dt.datetime.now()
 
     def stop(self) -> None:
         """Stop the timer and accumulate elapsed time."""
-        if isinstance(self._active_counting_since, dt.datetime):
-            self._accumulated_elapsed += dt.datetime.now() - self._active_counting_since
-        self._active_counting_since = dt.timedelta()
+        match self._active_counting_since:
+            case dt.datetime() as since:
+                self._accumulated_elapsed += dt.datetime.now() - since
+        self._active_counting_since = None
 
     @property
     def variable(self) -> tk.StringVar:
@@ -1728,10 +1754,16 @@ class TetraTile(tk.Frame):
 
             The closure captures ``method_name`` (not the handler itself) so
             that handler swaps take effect without rebinding.
+
+            :param method_name: Name of the :class:`InputHandler` method to dispatch.
+            :returns: A Tkinter ``<KeyPress>`` callback.
             """
 
             def callback(event: tk.Event) -> None:
-                """Dispatch the bound key event to the active input handler."""
+                """Dispatch the bound key event to the active input handler.
+
+                :param event: The Tkinter key event (unused; the method is dispatched by name).
+                """
                 getattr(self._input_handler, method_name)()
 
             return callback
@@ -1991,18 +2023,16 @@ class TetraTile(tk.Frame):
             self._sync_logger_time()
             self.event_logger.log(EventType.row_clear, count=full_count)
 
-    def _get_stats(self) -> dict[str, typing.Any]:
+    def _get_stats(self) -> GameStats:
         """Collect current game statistics into a plain dictionary.
 
         :returns: Dictionary with keys ``pieces``, ``rows_cleared``,
             ``rows_by_count`` (list indexed by simultaneous-clear count − 1),
             and ``pieces_by_type`` (dict mapping piece name to usage count).
         """
-        return {
-            "pieces": self.used["total"].get(),
-            "rows_cleared": self.removed_total.get(),
-            "rows_by_count": [var.get() for var in self.removed_by_count],
-            "pieces_by_type": {
-                name: var.get() for name, var in self.used.items() if name != "total"
-            },
-        }
+        return GameStats(
+            pieces=self.used["total"].get(),
+            rows_cleared=self.removed_total.get(),
+            rows_by_count=[var.get() for var in self.removed_by_count],
+            pieces_by_type={name: var.get() for name, var in self.used.items() if name != "total"},
+        )

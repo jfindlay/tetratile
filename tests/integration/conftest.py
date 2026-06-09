@@ -1,55 +1,34 @@
-"""Integration tests for tetratile game."""
+"""Integration test fixtures shared across the tetratile integration suite."""
 
-import random
 from unittest.mock import MagicMock
 
 import pytest
+from pytest_mock import MockerFixture
 
-from tetratile import (
-    Grid,
-    Polyomino,
-    Translation,
-    tetrominoes,
-)
+from tetratile import Grid
 from tetratile.config import GameConfig
 
 
 @pytest.fixture
 def config() -> GameConfig:
-    """Create a default game config for tests."""
+    """Provide a default :class:`GameConfig` for integration tests."""
     return GameConfig()
 
 
 @pytest.fixture
 def grid(config: GameConfig) -> Grid:
-    """Create a test grid with default dimensions."""
+    """Provide a :class:`Grid` with default board dimensions."""
     return Grid(config.board.width, config.board.height)
 
 
 @pytest.fixture
-def tetromino(grid: Grid) -> Polyomino:
-    """Create a random tetromino translated to the grid centre."""
-    p = random.choice(tetrominoes)
-    moved = p.translate(Translation(grid.width // 2, grid.height // 2), grid)
-    assert moved is not None
-    return moved
+def mock_parent(mocker: MockerFixture) -> MagicMock:
+    """Provide a mock parent widget for :class:`Board` construction.
 
-
-@pytest.fixture
-def all_tetrominoes(grid: Grid) -> list[Polyomino]:
-    """Create all tetromino types translated to the grid centre."""
-    result = []
-    for p in tetrominoes:
-        moved = p.translate(Translation(grid.width // 2, grid.height // 2), grid)
-        assert moved is not None, f"Tetromino {p.name!r} failed to translate to grid centre"
-        result.append(moved)
-    return result
-
-
-@pytest.fixture
-def mock_parent() -> MagicMock:
-    """Create a mock parent widget for Board creation."""
-    parent = MagicMock()
+    Returns a ``MagicMock`` configured with the ``winfo_width`` and
+    ``winfo_height`` return values that :class:`Board` reads during init.
+    """
+    parent: MagicMock = mocker.MagicMock()
     parent.winfo_width.return_value = 320
     parent.winfo_height.return_value = 704
     return parent

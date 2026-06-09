@@ -42,12 +42,24 @@ path rather than the source tree.
 
 ## `AgentRunner` requires `$DISPLAY` even when `show_gui=False`
 
-`AgentRunner.run()` unconditionally creates `tk.Tk()` at line 112 of
-`agent_runner.py`, which raises `TclError: no display name and no $DISPLAY
-environment variable` in headless CI.  Eight tests in
-`tests/integration/test_agent_runner.py` fail for this reason.
+`AgentRunner.run()` unconditionally creates `tk.Tk()` in `AgentRunner.run()`,
+which raises `TclError: no display name and no $DISPLAY environment variable`
+in headless CI.  All tests in `tests/integration/test_agent_runner.py` fail
+for this reason.
 
 The fix is to decouple the game-logic loop from the tkinter event loop when
 `show_gui=False`, so that `AgentRunner` can run without any display.  This
 requires separating the pure-logic tick path from the tkinter `after()`
 scheduling in `TetraTile`.
+
+## Open development items
+
+- Project package/module reorganisation — `__init__.py` currently mixes lattice types,
+  game state types, helpers, `Grid`, `Polyomino`, `Board`, and `TetraTile`. Splitting into
+  per-concern modules (`types.py`, `grid.py`, `polyomino.py`, `board.py`, `game.py`) is
+  deferred pending a larger refactor.
+- Configurably allow monomino, domino, trominoes (and potentially pentominoes).
+- Heuristic agents and trained/RL agents (the `RandomAgent` baseline is the only agent
+  currently implemented).
+- Integer-exact rotation via unnormalised rotor :math:`U = 1 + e_{12}`, replacing
+  the ``Decimal`` arithmetic used for half-integer-origin pieces (Z, S, I, O).

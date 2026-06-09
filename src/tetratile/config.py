@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import tomllib
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
@@ -30,42 +30,45 @@ def _xdg_config_file() -> Path:
     return base / "tetratile" / "config.toml"
 
 
-def _dict_to_toml(data: dict[str, Any], indent: int = 0) -> str:
+def _dict_to_toml(
+    data: dict[str, bool | int | float | str | dict[str, object]], indent: int = 0
+) -> str:
     """Serialise a plain dictionary to TOML format.
 
     Scalar values are emitted before nested tables so that the output
     conforms to the TOML specification (scalars must precede ``[table]``
     headers at each level).
 
-    :param data: Dictionary to serialise.
+    :param data: Dictionary to serialise. Values may be scalar scalars
+        (``bool``, ``int``, ``float``, ``str``) or nested ``dict`` tables.
     :param indent: Current indentation level (unused in flat TOML output).
     :returns: TOML-formatted string.
     """
     lines: list[str] = []
     prefix = "    " * indent
 
-    scalars: list[tuple[str, Any]] = []
-    tables: list[tuple[str, dict[str, Any]]] = []
+    scalars: list[tuple[str, bool | int | float | str]] = []
+    tables: list[tuple[str, dict[str, object]]] = []
 
     for key, value in data.items():
-        if isinstance(value, dict):
-            tables.append((key, value))
-        else:
-            scalars.append((key, value))
+        match value:
+            case dict() as nested:
+                tables.append((key, nested))
+            case bool() | int() | float() | str() as scalar:
+                scalars.append((key, scalar))
 
     for key, value in scalars:
-        if isinstance(value, bool):
-            lines.append(f"{prefix}{key} = {str(value).lower()}")
-        elif isinstance(value, (int, float)):
-            lines.append(f"{prefix}{key} = {value}")
-        elif isinstance(value, str):
-            lines.append(f'{prefix}{key} = "{value}"')
-        else:
-            lines.append(f'{prefix}{key} = "{value}"')
+        match value:
+            case bool():
+                lines.append(f"{prefix}{key} = {str(value).lower()}")
+            case int() | float():
+                lines.append(f"{prefix}{key} = {value}")
+            case _:
+                lines.append(f'{prefix}{key} = "{value}"')
 
     for key, value in tables:
         lines.append(f"{prefix}[{key}]")
-        lines.append(_dict_to_toml(value, indent))
+        lines.append(_dict_to_toml(value, indent))  # type: ignore[arg-type]
 
     return "\n".join(lines)
 
@@ -175,8 +178,7 @@ class GameConfig(BaseModel):
         """
         target = (path / "config.toml") if path is not None else _xdg_config_file()
         target.parent.mkdir(parents=True, exist_ok=True)
-        with open(target, "w") as f:
-            f.write(_dict_to_toml(self.model_dump(exclude_none=True)))
+        target.write_text(_dict_to_toml(self.model_dump(exclude_none=True)))
         self.config_file = target
 
     @classmethod
@@ -199,7 +201,7 @@ class GameConfig(BaseModel):
         config_file = (path / "config.toml") if path is not None else _xdg_config_file()
         if config_file.exists():
             try:
-                with open(config_file, "rb") as f:
+                with config_file.open("rb") as f:
                     data = tomllib.load(f)
                 config = cls.model_validate(data)
             except Exception:

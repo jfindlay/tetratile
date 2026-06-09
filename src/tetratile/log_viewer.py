@@ -129,7 +129,11 @@ class LogViewer(tk.Toplevel):
                 return f"{time_str} {event.type.name}"
 
     def _on_select(self, event: tk.Event) -> None:
-        """Handle listbox selection."""
+        """Handle listbox selection.
+
+        :param event: The Tkinter ``<<ListboxSelect>>`` event (unused; selection
+            is read from the listbox widget directly).
+        """
         selection = self._listbox.curselection()  # type: ignore[no-untyped-call]
         if selection:
             self._current_index = selection[0]

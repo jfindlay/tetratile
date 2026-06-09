@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from .agent import Agent
 from .config import GameConfig
@@ -34,7 +34,7 @@ from .input_agent import AgentInputHandler
 from .output import PrintObserver
 
 if TYPE_CHECKING:
-    from . import GameObservation
+    from . import GameObservation, GameStats
 
 from . import GameState, TetraTile
 
@@ -53,7 +53,7 @@ class GameResult:
     :attr steps: Number of agent actions executed during the run.
     """
 
-    stats: dict[str, Any]
+    stats: GameStats
     final_observation: GameObservation
     steps: int
 

@@ -58,7 +58,10 @@ class ConfigUI(tk.Toplevel):
         self._create_buttons()
 
     def _create_board_tab(self, parent: ttk.Frame) -> None:
-        """Create the board configuration tab."""
+        """Create the board configuration tab.
+
+        :param parent: The ``ttk.Frame`` into which board widgets are placed.
+        """
         ttk.Label(parent, text="Board Settings", font=("TkDefaultFont", 10, "bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 12)
         )
@@ -130,7 +133,10 @@ class ConfigUI(tk.Toplevel):
         parent.columnconfigure(1, weight=1)
 
     def _create_gameplay_tab(self, parent: ttk.Frame) -> None:
-        """Create the gameplay configuration tab."""
+        """Create the gameplay configuration tab.
+
+        :param parent: The ``ttk.Frame`` into which gameplay widgets are placed.
+        """
         ttk.Label(parent, text="Gameplay Settings", font=("TkDefaultFont", 10, "bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 12)
         )
@@ -260,7 +266,10 @@ class ConfigUI(tk.Toplevel):
         parent.columnconfigure(1, weight=1)
 
     def _create_controls_tab(self, parent: ttk.Frame) -> None:
-        """Create the controls configuration tab."""
+        """Create the controls configuration tab.
+
+        :param parent: The ``ttk.Frame`` into which controls widgets are placed.
+        """
         ttk.Label(parent, text="Keyboard Controls", font=("TkDefaultFont", 10, "bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 12)
         )
@@ -314,10 +323,20 @@ class ConfigUI(tk.Toplevel):
         )
 
     def _record_key(self, action: str) -> None:
-        """Start key recording for an action."""
+        """Start key recording for an action.
+
+        :param action: The key-binding action name (e.g. ``"left"``, ``"rotate_right"``).
+        """
         entry = self._key_entries[action]
 
         def on_keypress(event: tk.Event) -> None:
+            """Handle a key press during key recording.
+
+            Records the pressed key to the action binding; ``Escape`` aborts recording
+            without changing the binding.
+
+            :param event: The Tkinter key-press event carrying the ``keysym``.
+            """
             key = event.keysym
             if key == "Escape":
                 entry.focus_set()
@@ -388,59 +407,80 @@ class ConfigUI(tk.Toplevel):
         self._update_remove_freq_value()
 
     def _on_screen_scale_changed(self) -> None:
-        """Handle screen scale checkbox change."""
+        """Handle screen scale checkbox change.
+
+        When auto-scale is enabled the manual scale slider is disabled (the
+        scale is computed automatically on startup).  When auto-scale is off,
+        the slider is enabled so the user can set it manually.
+        """
         self._modified = True
-        enabled = self._screen_scale_var.get()
-        self._scale_slider.config(state="normal" if enabled else "disabled")
-        if enabled:
-            self._scale_slider.config(state="disabled")
+        auto = self._screen_scale_var.get()
+        # Disable manual slider when auto-scale is on; enable it when off.
+        self._scale_slider.config(state="disabled" if auto else "normal")
 
     def _gather_config(self) -> GameConfig:
-        """Gather values from widgets into a GameConfig."""
-        self._config.screen_scale = self._screen_scale_var.get()
-        self._config.board.scale = self._scale_var.get()
-        self._config.board.width = self._width_var.get()
-        self._config.board.height = self._height_var.get()
-        self._config.initial_rate = self._initial_rate_var.get()
-        self._config.min_rate = self._min_rate_var.get()
-        self._config.constant = self._constant_var.get()
-        self._config.remove_freq = self._remove_freq_var.get()
-        self._config.shadow = self._shadow_var.get()  # type: ignore[assignment]
-        self._config.kick = self._kick_var.get()
-        self._config.stack_transparency = self._stack_transparency_var.get()
+        """Gather values from widgets into a new validated :class:`GameConfig`.
 
-        for action, var in self._key_vars.items():
-            setattr(self._config.keys, action, var.get())
+        Constructs a new ``GameConfig`` via ``model_copy(update=...)`` so that
+        all Pydantic field validators run (e.g. ``initial_rate >= min_rate``).
 
+        :returns: A validated copy of the config with current widget values.
+        """
+        key_updates = {action: var.get() for action, var in self._key_vars.items()}
+        new_keys = self._config.keys.model_copy(update=key_updates)
+        new_board = self._config.board.model_copy(
+            update={
+                "scale": self._scale_var.get(),
+                "width": self._width_var.get(),
+                "height": self._height_var.get(),
+            }
+        )
+        self._config = self._config.model_copy(
+            update={
+                "screen_scale": self._screen_scale_var.get(),
+                "board": new_board,
+                "initial_rate": self._initial_rate_var.get(),
+                "min_rate": self._min_rate_var.get(),
+                "constant": self._constant_var.get(),
+                "remove_freq": self._remove_freq_var.get(),
+                "shadow": self._shadow_var.get(),
+                "kick": self._kick_var.get(),
+                "stack_transparency": self._stack_transparency_var.get(),
+                "keys": new_keys,
+            }
+        )
         return self._config
+
+    def _apply_to_original(self) -> None:
+        """Copy all editable fields from ``_config`` into ``_original``.
+
+        Uses ``model_copy(update=...)`` so validators run on assignment.
+        Preserves :attr:`GameConfig.config_file` from the original.
+        """
+        self._original = self._original.model_copy(
+            update={
+                "screen_scale": self._config.screen_scale,
+                "board": self._config.board,
+                "initial_rate": self._config.initial_rate,
+                "min_rate": self._config.min_rate,
+                "constant": self._config.constant,
+                "remove_freq": self._config.remove_freq,
+                "shadow": self._config.shadow,
+                "kick": self._config.kick,
+                "stack_transparency": self._config.stack_transparency,
+                "keys": self._config.keys,
+            }
+        )
 
     def _on_apply(self) -> None:
         """Apply changes and continue editing."""
         self._gather_config()
-        self._original.screen_scale = self._config.screen_scale
-        self._original.board = self._config.board
-        self._original.initial_rate = self._config.initial_rate
-        self._original.min_rate = self._config.min_rate
-        self._original.constant = self._config.constant
-        self._original.remove_freq = self._config.remove_freq
-        self._original.shadow = self._config.shadow
-        self._original.kick = self._config.kick
-        self._original.stack_transparency = self._config.stack_transparency
-        self._original.keys = self._config.keys
+        self._apply_to_original()
 
     def _on_save_close(self) -> None:
         """Save to file, apply, and close."""
         self._gather_config()
-        self._original.screen_scale = self._config.screen_scale
-        self._original.board = self._config.board
-        self._original.initial_rate = self._config.initial_rate
-        self._original.min_rate = self._config.min_rate
-        self._original.constant = self._config.constant
-        self._original.remove_freq = self._config.remove_freq
-        self._original.shadow = self._config.shadow
-        self._original.kick = self._config.kick
-        self._original.stack_transparency = self._config.stack_transparency
-        self._original.keys = self._config.keys
+        self._apply_to_original()
         self._original.write_to_file()
         self.grab_release()
         self.destroy()

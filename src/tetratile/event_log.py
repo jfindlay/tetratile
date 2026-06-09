@@ -10,13 +10,28 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, cast
 
 from .config import GameConfig
 
+if TYPE_CHECKING:
+    from . import GameStats
+
 
 class EventType(enum.Enum):
-    """Types of events that can be logged during gameplay."""
+    """Types of events that can be logged during gameplay.
+
+    :attr game_start: Game session began.
+    :attr game_pause: Game was paused.
+    :attr game_resume: Game was resumed from pause.
+    :attr game_over: Game ended.
+    :attr piece_spawn: A new piece appeared at the top.
+    :attr piece_move: A piece was translated (left, right, or down).
+    :attr piece_rotate: A piece was rotated (CW or CCW).
+    :attr piece_lock: A piece was locked into the grid.
+    :attr row_clear: One or more full rows were removed.
+    :attr rate_change: The fall rate changed.
+    """
 
     game_start = enum.auto()
     game_pause = enum.auto()
@@ -53,7 +68,7 @@ class Event:
     count: int | None = None
     reason: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Convert event to dictionary for JSON serialization.
 
         :returns: Dictionary with event data.
@@ -65,13 +80,13 @@ class Event:
         return d
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Event:
+    def from_dict(cls, data: dict[str, object]) -> Event:
         """Create event from dictionary.
 
         :param data: Dictionary with event data.
         :returns: Event instance.
         """
-        elapsed_str = data.get("elapsed", "00:00.000")
+        elapsed_str = str(data.get("elapsed", "00:00.000"))
         parts = elapsed_str.split(":")
         minutes = int(parts[0])
         sec_ms = parts[1].split(".")
@@ -79,13 +94,13 @@ class Event:
         ms = int(sec_ms[1]) if len(sec_ms) > 1 else 0
         return cls(
             elapsed=timedelta(minutes=minutes, seconds=seconds, milliseconds=ms),
-            type=EventType[data["type"]],
-            piece_type=data.get("piece_type") or None,
-            col=data.get("col") or None,
-            rot=data.get("rot") or None,
-            direction=data.get("direction") or None,
-            count=data.get("count") or None,
-            reason=data.get("reason") or None,
+            type=EventType[str(data["type"])],
+            piece_type=str(data["piece_type"]) if data.get("piece_type") else None,
+            col=int(str(data["col"])) if data.get("col") is not None else None,
+            rot=int(str(data["rot"])) if data.get("rot") is not None else None,
+            direction=str(data["direction"]) if data.get("direction") else None,
+            count=int(str(data["count"])) if data.get("count") is not None else None,
+            reason=str(data["reason"]) if data.get("reason") else None,
         )
 
 
@@ -108,9 +123,9 @@ class GameLog:
     timestamp_start: str = ""
     timestamp_end: str = ""
     seed: int = 0
-    config: dict[str, Any] | None = None
+    config: dict[str, object] | None = None
     events: list[Event] | None = None
-    stats: dict[str, Any] | None = None
+    stats: GameStats | None = None
 
     def to_json(self) -> str:
         """Serialize log to JSON string.
@@ -146,7 +161,7 @@ class GameLog:
             seed=d["seed"],
             config=d.get("config"),
             events=events,
-            stats=d.get("stats"),
+            stats=cast("GameStats", d["stats"]) if d.get("stats") is not None else None,
         )
 
 
@@ -170,6 +185,7 @@ class EventLogger:
         self._start_time: datetime | None = None
         self._elapsed_ms: int = 0
         self._paused_ms: int = 0
+        self._seed: int = 0
 
     def start(self, config: GameConfig, seed: int | None = None) -> None:
         """Start a new game log.
@@ -189,7 +205,7 @@ class EventLogger:
         self._elapsed_ms = 0
         self._paused_ms = 0
 
-    def stop(self, stats: dict[str, Any]) -> None:
+    def stop(self, stats: GameStats) -> None:
         """End the current game log.
 
         :param stats: Final game statistics.

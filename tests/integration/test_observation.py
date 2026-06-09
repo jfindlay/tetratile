@@ -82,21 +82,29 @@ class TestObservationBoardLayout:
 # ---------------------------------------------------------------------------
 
 
+def _make_minimal_obs(*, piece: str = "T", next_piece: str = "S") -> GameObservation:
+    """Build a minimal :class:`GameObservation` for testing.
+
+    :param piece: Name of the current piece.
+    :param next_piece: Name of the next piece.
+    :returns: A :class:`GameObservation` with an empty board and zero stats.
+    """
+    from tetratile import GameStats
+
+    return GameObservation(
+        board=tuple(tuple(None for _ in range(10)) for _ in range(22)),
+        current_piece=piece,
+        current_piece_coords=frozenset({Square(5, 20)}),
+        current_piece_rotation=0,
+        next_piece=next_piece,
+        stats=GameStats(pieces=0, rows_cleared=0, rows_by_count=[], pieces_by_type={}),
+        state=GameState.running,
+        elapsed=datetime.timedelta(seconds=0),
+    )
+
+
 class TestAgentOutputHandler:
     """Tests for AgentOutputHandler push/poll model."""
-
-    def _make_obs(self) -> GameObservation:
-        """Create a minimal fake observation."""
-        return GameObservation(
-            board=tuple(tuple(None for _ in range(10)) for _ in range(22)),
-            current_piece="T",
-            current_piece_coords=frozenset({Square(5, 20)}),
-            current_piece_rotation=0,
-            next_piece="S",
-            stats={},
-            state=GameState.running,
-            elapsed=datetime.timedelta(seconds=0),
-        )
 
     def test_get_latest_returns_none_before_first_observation(self) -> None:
         """get_latest() is None before any observation is pushed."""
@@ -106,15 +114,15 @@ class TestAgentOutputHandler:
     def test_get_latest_returns_most_recent_observation(self) -> None:
         """get_latest() returns the most recently pushed observation."""
         handler = AgentOutputHandler()
-        obs = self._make_obs()
+        obs = _make_minimal_obs()
         handler.on_observation(obs)
         assert handler.get_latest() is obs
 
     def test_get_latest_updates_on_new_push(self) -> None:
         """get_latest() updates when a new observation is pushed."""
         handler = AgentOutputHandler()
-        obs1 = self._make_obs()
-        obs2 = self._make_obs()
+        obs1 = _make_minimal_obs()
+        obs2 = _make_minimal_obs()
         handler.on_observation(obs1)
         handler.on_observation(obs2)
         assert handler.get_latest() is obs2
@@ -128,8 +136,13 @@ class TestAgentOutputHandler:
 class TestPrintObserver:
     """Tests for PrintObserver output."""
 
-    def _make_obs(self) -> GameObservation:
-        """Create a minimal fake observation."""
+    def _make_print_obs(self) -> GameObservation:
+        """Build a :class:`GameObservation` with one occupied cell for PrintObserver tests.
+
+        :returns: A ``GameObservation`` with cell (3, 0) set to ``"T"``.
+        """
+        from tetratile import GameStats
+
         board_list: list[list[str | None]] = [[None] * 10 for _ in range(22)]
         board_list[0][3] = "T"  # bottom row, column 3
         return GameObservation(
@@ -138,7 +151,7 @@ class TestPrintObserver:
             current_piece_coords=frozenset({Square(3, 0)}),
             current_piece_rotation=0,
             next_piece="S",
-            stats={"rows_cleared": 0, "pieces": 1},
+            stats=GameStats(pieces=1, rows_cleared=0, rows_by_count=[], pieces_by_type={}),
             state=GameState.running,
             elapsed=datetime.timedelta(seconds=5),
         )
@@ -146,7 +159,7 @@ class TestPrintObserver:
     def test_print_observer_writes_to_stdout(self, capsys: pytest.CaptureFixture[str]) -> None:
         """PrintObserver.on_observation writes board state to stdout."""
         observer = PrintObserver()
-        obs = self._make_obs()
+        obs = self._make_print_obs()
         observer.on_observation(obs)
         captured = capsys.readouterr()
         assert "STATE:" in captured.out
@@ -156,7 +169,7 @@ class TestPrintObserver:
     def test_print_observer_shows_occupied_cell(self, capsys: pytest.CaptureFixture[str]) -> None:
         """PrintObserver output contains the piece name for occupied cells."""
         observer = PrintObserver()
-        obs = self._make_obs()
+        obs = self._make_print_obs()
         observer.on_observation(obs)
         captured = capsys.readouterr()
         assert "TT" in captured.out  # 2-char cell representation
@@ -170,30 +183,17 @@ class TestPrintObserver:
 class TestRandomAgent:
     """Tests for RandomAgent decision-making."""
 
-    def _make_obs(self) -> GameObservation:
-        """Minimal observation."""
-        return GameObservation(
-            board=tuple(tuple(None for _ in range(10)) for _ in range(22)),
-            current_piece="T",
-            current_piece_coords=frozenset(),
-            current_piece_rotation=0,
-            next_piece="S",
-            stats={},
-            state=GameState.running,
-            elapsed=datetime.timedelta(seconds=0),
-        )
-
     def test_select_action_returns_action_enum(self) -> None:
         """select_action returns an Action enum value."""
         agent = RandomAgent()
-        obs = self._make_obs()
+        obs = _make_minimal_obs()
         action = agent.select_action(obs)
         assert isinstance(action, Action)
 
     def test_select_action_returns_movement_action(self) -> None:
         """RandomAgent only returns movement actions (not pause/full-drop/lock)."""
         agent = RandomAgent()
-        obs = self._make_obs()
+        obs = _make_minimal_obs()
         non_movement = {
             Action.toggle_pause,
             Action.full_drop,

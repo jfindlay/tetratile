@@ -12,9 +12,8 @@ class TestBoardRender:
     """Tests for Board.render() functionality."""
 
     @pytest.fixture
-    def board(self, config: GameConfig) -> Board:
+    def board(self, config: GameConfig, mock_parent: MagicMock) -> Board:
         """Create a Board with a mocked parent widget."""
-        mock_parent = MagicMock()
         return Board(config, mock_parent, config.board.width, config.board.height)
 
     @pytest.fixture
@@ -80,9 +79,8 @@ class TestBoardHighlightFullRows:
     """Tests for full row detection via Board.highlight_full_rows()."""
 
     @pytest.fixture
-    def board(self, config: GameConfig) -> Board:
+    def board(self, config: GameConfig, mock_parent: MagicMock) -> Board:
         """Create a board with mocked canvas."""
-        mock_parent = MagicMock()
         return Board(config, mock_parent, config.board.width, config.board.height)
 
     @pytest.fixture
@@ -130,9 +128,8 @@ class TestBoardRenderDelta:
     """
 
     @pytest.fixture
-    def board(self, config: GameConfig) -> Board:
+    def board(self, config: GameConfig, mock_parent: MagicMock) -> Board:
         """Create a Board with a mocked parent widget."""
-        mock_parent = MagicMock()
         return Board(config, mock_parent, config.board.width, config.board.height)
 
     @pytest.fixture
